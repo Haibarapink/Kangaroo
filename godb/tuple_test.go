@@ -67,6 +67,7 @@ func TestTupleSerialization(t *testing.T) {
 	b := new(bytes.Buffer)
 	t1.writeTo(b)
 	t3, err := readTupleFrom(b, &td)
+
 	if err != nil {
 		t.Fatalf("Error loading tuple from saved buffer.")
 	}

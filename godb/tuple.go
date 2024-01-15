@@ -46,7 +46,6 @@ type TupleDesc struct {
 // all of their field objects are equal and they
 // are the same length
 func (d1 *TupleDesc) equals(d2 *TupleDesc) bool {
-	// TODO: some code goes here
 	if len(d1.Fields) != len(d2.Fields) {
 		return false
 	}
@@ -231,6 +230,7 @@ func readString(b *bytes.Buffer, len int) (string, error) {
 
 func readTupleFrom(b *bytes.Buffer, desc *TupleDesc) (*Tuple, error) {
 	var tp Tuple = Tuple{}
+	tp.Desc = *desc.copy()
 	for i := 0; i < len(desc.Fields); i++ {
 		switch desc.Fields[i].Ftype {
 		case IntType:
