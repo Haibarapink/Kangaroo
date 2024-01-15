@@ -47,6 +47,9 @@ type TupleDesc struct {
 // are the same length
 func (d1 *TupleDesc) equals(d2 *TupleDesc) bool {
 	// TODO: some code goes here
+	if len(d1.Fields) != len(d2.Fields) {
+		return false
+	}
 	for i, f := range d1.Fields {
 		if !f.equals(d2.Fields[i]) {
 			return false
@@ -349,14 +352,15 @@ func (t *Tuple) compareField(t2 *Tuple, field Expr) (orderByState, error) {
 // do match on TableQualifier (e.g., a field  t1.name in fields should match an
 // entry t2.name in t, but only if there is not an entry t1.name in t)
 func (t *Tuple) project(fields []FieldType) (*Tuple, error) {
+	var res Tuple = Tuple{}
 	for _, f := range fields {
 		fieldIndex, err := findFieldInTd(f, &t.Desc)
 		if err != nil {
 			return nil, err
 		}
-		t.Fields = append(t.Fields, t.Fields[fieldIndex])
+		res.Fields = append(res.Fields, t.Fields[fieldIndex])
 	}
-	return nil, nil //replace me
+	return &res, nil //replace me
 }
 
 // Compute a key for the tuple to be used in a map structure
