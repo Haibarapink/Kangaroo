@@ -42,6 +42,19 @@ type TupleDesc struct {
 	Fields []FieldType
 }
 
+func (d *TupleDesc) Size() int {
+	var size int = 0
+	for _, f := range d.Fields {
+		switch f.Ftype {
+		case IntType:
+			size += 8
+		case StringType:
+			size += StringLength
+		}
+	}
+	return size
+}
+
 // Compare two tuple descs, and return true iff
 // all of their field objects are equal and they
 // are the same length
@@ -145,6 +158,11 @@ type Tuple struct {
 }
 
 type recordID interface {
+}
+
+type Rid struct {
+	PageNo int
+	SlotNo int
 }
 
 // Serialize the contents of the tuple into a byte array Since all tuples are of

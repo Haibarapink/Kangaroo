@@ -1,9 +1,58 @@
 package godb
 
 import (
+	"fmt"
 	"testing"
 	"unsafe"
 )
+
+// my test
+func newIter() func() int {
+	n := 1
+	// closure can reference and use the variable n
+	return func() int {
+		n += 2
+		return n
+	}
+}
+
+// my test
+func TestIteratorOp(t *testing.T) {
+	iter := newIter()
+	for i := 0; i < 10; i++ {
+		fmt.Println(iter())
+	}
+}
+
+// my test
+func TestHeapPageInsertAndFetch(t *testing.T) {
+	td, t1, t2, hf, _, _ := makeTestVars()
+	pg := newHeapPage(&td, 0, hf)
+	var expectedSlots = (PageSize - 8) / (StringLength + int(unsafe.Sizeof(int64(0))))
+	if pg.getNumSlots() != expectedSlots {
+		t.Fatalf("Incorrect number of slots, expected %d, got %d", expectedSlots, pg.getNumSlots())
+	}
+
+	pg.insertTuple(&t1)
+	pg.insertTuple(&t2)
+
+	ft, err := pg.fetchTuple(0)
+	if err != nil {
+		t.Fatalf("Error fetching tuple: %s", err.Error())
+	}
+	if !ft.equals(&t1) {
+		t.Error("fail to fetch tuple t1")
+	}
+
+	ft, err = pg.fetchTuple(1)
+	if err != nil {
+		t.Fatalf("Error fetching tuple: %s", err.Error())
+	}
+
+	if !ft.equals(&t2) {
+		t.Errorf("fail to fetch tuple t2")
+	}
+}
 
 func TestInsertHeapPage(t *testing.T) {
 	td, t1, t2, hf, _, _ := makeTestVars()
