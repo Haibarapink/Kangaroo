@@ -13,13 +13,15 @@ const (
 	WritePerm RWPerm = iota
 )
 
+// 目前 bug是在于，每次都是新建一个page，而不是从缓存中取出来， 明天改
 type BufferPool struct {
-	// TODO: some code goes here
+	// pageid to page
+	pages map[int]*heapPage
 }
 
 // Create a new BufferPool with the specified number of pages
 func NewBufferPool(numPages int) *BufferPool {
-	// TODO: some code goes here
+
 	return &BufferPool{}
 }
 
@@ -66,5 +68,6 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 	var hpFile = file.(*HeapFile)
 	var hp heapPage = *newHeapPage(hpFile.desc, pageNo, hpFile)
 	var p Page = &hp
+
 	return &p, nil
 }
