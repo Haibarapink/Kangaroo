@@ -43,6 +43,13 @@ func makeTestVars() (TupleDesc, Tuple, Tuple, *HeapFile, *BufferPool, Transactio
 
 }
 
+func TestCreateHeapFile(t *testing.T) {
+	_, _, _, hf, _, _ := makeTestVars()
+	if hf == nil {
+		t.Errorf("HeapFile was nil")
+	}
+}
+
 func TestCreateAndInsertHeapFile(t *testing.T) {
 	_, t1, t2, hf, _, tid := makeTestVars()
 	hf.insertTuple(&t1, tid)

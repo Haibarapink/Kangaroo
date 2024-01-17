@@ -215,6 +215,9 @@ func (f *HeapFile) flushPage(p *Page) error {
 	if err != nil {
 		return err
 	}
+	if hp.pageId >= f.NumPages() {
+		f.file.Truncate(int64((hp.pageId + 1) * PageSize))
+	}
 	var _, err2 = f.file.Write(bf.Bytes())
 	if err2 != nil {
 		return err2
