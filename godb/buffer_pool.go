@@ -62,6 +62,9 @@ func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
 // one of the transactions in the deadlock]. You will likely want to store a list
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
-	// TODO: some code goes here
-	return nil, nil
+	// for lab1 temporarily ignore tid and perm and read the page from disk
+	var hpFile = file.(*HeapFile)
+	var hp heapPage = *newHeapPage(hpFile.desc, pageNo, hpFile)
+	var p Page = &hp
+	return &p, nil
 }

@@ -78,6 +78,20 @@ func newHeapPage(desc *TupleDesc, pageNo int, f *HeapFile) *heapPage {
 	res.pageId = pageNo
 	res.UpdateSlotNumAndSingleTupleSize()
 	res.dirty = false
+	res.file = f
+
+	// read from file if pageNo is valid else is create a new page
+	if pageNo < f.NumPages() {
+		var buf = bytes.Buffer{}
+		buf.Grow(PageSize)
+		f.file.Seek(int64(pageNo*PageSize), 0)
+		var _, err = buf.ReadFrom(f.file)
+		if err != nil {
+			return nil
+		}
+		res.initFromBuffer(&buf)
+	}
+
 	return res
 }
 
@@ -158,7 +172,8 @@ func (h *heapPage) setDirty(dirty bool) {
 // Page method - return the corresponding HeapFile
 // for this page.
 func (p *heapPage) getFile() *DBFile {
-	return nil
+	var dbFile DBFile = p.file
+	return &dbFile
 }
 
 // Allocate a new bytes.Buffer and write the heap page to it. Returns an error

@@ -2,7 +2,6 @@ package godb
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"os"
 	"strconv"
@@ -144,15 +143,11 @@ func (f *HeapFile) readPage(pageNo int) (*Page, error) {
 	}
 
 	var page = newHeapPage(f.desc, pageNo, f)
-	f.file.Seek(int64(pageNo*PageSize), 0)
-	var buf = make([]byte, PageSize)
-	var n, err = f.file.Read(buf)
-	if err != nil {
-		return nil, err
+	if page == nil {
+		return nil, GoDBError{TupleNotFoundError, fmt.Sprintf("page %d not found", pageNo)}
 	}
-
-	page.initFromBuffer(bytes.NewBuffer(buf[0:n]))
-	return page, nil
+	var p Page = page
+	return &p, nil
 }
 
 // Add the tuple to the HeapFile.  This method should search through pages in
@@ -168,9 +163,31 @@ func (f *HeapFile) readPage(pageNo int) (*Page, error) {
 // worry about concurrent transactions modifying the Page or HeapFile.  We will
 // add support for concurrent modifications in lab 3.
 func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
-	// TODO: some code goes here
-	return nil //replace me
+	var i = 0
+	var bp = f.bufPool
+	var pg *Page
+	var maxPageNo = f.NumPages()
+	for i < maxPageNo {
+		pg, _ = bp.GetPage(f, i, tid, ReadPerm)
+		var hp = (*pg).(*heapPage)
+		if hp.numUsedSlots < hp.numSlots {
+			hp.insertTuple(t)
+			(*pg).setDirty(true)
+			return nil
+		}
+		i++
+	}
 
+	// allocate a new page
+	var newPage, err = bp.GetPage(f, maxPageNo, tid, WritePerm)
+	if err != nil {
+		return err
+	}
+	var hp = (*newPage).(*heapPage)
+	hp.insertTuple(t)
+	(*newPage).setDirty(true)
+	f.flushPage(newPage)
+	return nil
 }
 
 // Remove the provided tuple from the HeapFile.  This method should use the
@@ -191,16 +208,25 @@ func (f *HeapFile) deleteTuple(t *Tuple, tid TransactionID) error {
 // that it is the ith page in the heap file), so you can determine where to write it
 // back.
 func (f *HeapFile) flushPage(p *Page) error {
-	// TODO: some code goes here
+	// get heap page
+	var hp = (*p).(*heapPage)
+	f.file.Seek(int64(hp.pageId*PageSize), 0)
+	var bf, err = hp.toBuffer()
+	if err != nil {
+		return err
+	}
+	var _, err2 = f.file.Write(bf.Bytes())
+	if err2 != nil {
+		return err2
+	}
+	f.file.Sync()
 	return nil //replace me
 }
 
 // [Operator] descriptor method -- return the TupleDesc for this HeapFile
 // Supplied as argument to NewHeapFile.
 func (f *HeapFile) Descriptor() *TupleDesc {
-	// TODO: some code goes here
-	return nil //replace me
-
+	return f.desc
 }
 
 // [Operator] iterator method
@@ -212,10 +238,37 @@ func (f *HeapFile) Descriptor() *TupleDesc {
 // You should esnure that Tuples returned by this method have their Rid object
 // set appropriate so that [deleteTuple] will work (see additional comments there).
 func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
-
+	var pageNo = 0
+	var bp = f.bufPool
+	var pg, err = bp.GetPage(f, pageNo, tid, ReadPerm)
+	if err != nil {
+		return nil, err
+	}
+	var hp = (*pg).(*heapPage)
+	var tupleIter = hp.tupleIter()
 	// TODO: some code goes here
 	return func() (*Tuple, error) {
-		return nil, nil
+		var tuple, err = tupleIter()
+		if err != nil {
+			return nil, err
+		}
+		if tuple == nil {
+			pageNo++
+			if pageNo >= f.NumPages() {
+				return nil, nil
+			}
+			pg, err = bp.GetPage(f, pageNo, tid, ReadPerm)
+			if err != nil {
+				return nil, err
+			}
+			hp = (*pg).(*heapPage)
+			tupleIter = hp.tupleIter()
+			tuple, err = tupleIter()
+			if err != nil {
+				return nil, err
+			}
+		}
+		return tuple, nil
 	}, nil
 
 }
