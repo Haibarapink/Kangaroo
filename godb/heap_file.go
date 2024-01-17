@@ -2,6 +2,7 @@ package godb
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"strconv"
@@ -20,6 +21,9 @@ type HeapFile struct {
 	// additional fields
 	bufPool *BufferPool
 	sync.Mutex
+
+	desc *TupleDesc
+	file *os.File
 }
 
 // Create a HeapFile.
@@ -29,14 +33,27 @@ type HeapFile struct {
 // - bp: the BufferPool that is used to store pages read from the HeapFile
 // May return an error if the file cannot be opened or created.
 func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool) (*HeapFile, error) {
-	// TODO: some code goes here
-	return &HeapFile{}, nil //replace me
+	// check file exists
+	var heapFile HeapFile
+	heapFile.bufPool = bp
+	heapFile.desc = td
+	var err error
+	heapFile.file, err = os.OpenFile(fromFile, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		return nil, err
+	}
+	return &heapFile, nil
 }
 
-// Return the number of pages in the heap file
+// Return the number of pages in the heap file.
+// If return -1 means that the heap file cannot be opened
 func (f *HeapFile) NumPages() int {
-	// TODO: some code goes here
-	return 0 //replace me
+	var stat, err = f.file.Stat()
+	if err != nil {
+		return -1
+	}
+	var size = stat.Size()
+	return int(size / int64(PageSize))
 }
 
 // Load the contents of a heap file from a specified CSV file.  Parameters are as follows:
@@ -122,8 +139,20 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 // appropriate offset, read the bytes in, and construct a [heapPage] object, using
 // the [heapPage.initFromBuffer] method.
 func (f *HeapFile) readPage(pageNo int) (*Page, error) {
-	// TODO: some code goes here
-	return nil, nil
+	if pageNo < 0 || pageNo >= f.NumPages() {
+		return nil, GoDBError{TupleNotFoundError, fmt.Sprintf("page %d not found", pageNo)}
+	}
+
+	var page = newHeapPage(f.desc, pageNo, f)
+	f.file.Seek(int64(pageNo*PageSize), 0)
+	var buf = make([]byte, PageSize)
+	var n, err = f.file.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	page.initFromBuffer(bytes.NewBuffer(buf[0:n]))
+	return page, nil
 }
 
 // Add the tuple to the HeapFile.  This method should search through pages in
