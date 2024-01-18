@@ -171,7 +171,11 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 		pg, _ = bp.GetPage(f, i, tid, ReadPerm)
 		var hp = (*pg).(*heapPage)
 		if hp.numUsedSlots < hp.numSlots {
-			hp.insertTuple(t)
+			rid, err := hp.insertTuple(t)
+			if err != nil {
+				return err
+			}
+			t.Rid = rid
 			(*pg).setDirty(true)
 			return nil
 		}
@@ -184,7 +188,11 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 		return err
 	}
 	var hp = (*newPage).(*heapPage)
-	hp.insertTuple(t)
+	rid, err := hp.insertTuple(t)
+	if err != nil {
+		return err
+	}
+	t.Rid = rid
 	hp.setDirty(true)
 	f.flushPage(newPage)
 	return nil
@@ -198,8 +206,19 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 // so you can supply any object you wish.  You will likely want to identify the
 // heap page and slot within the page that the tuple came from.
 func (f *HeapFile) deleteTuple(t *Tuple, tid TransactionID) error {
-	// TODO: some code goes here
-	return nil //replace me
+	rid := t.Rid.(Rid)
+	var pageNo = rid.PageNo
+	var bp = f.bufPool
+
+	var pg, err = bp.GetPage(f, pageNo, tid, ReadPerm)
+	if err != nil {
+		return err
+	}
+	var hp = (*pg).(*heapPage)
+	hp.deleteTuple(rid)
+	(*pg).setDirty(true)
+
+	return nil
 }
 
 // Method to force the specified page back to the backing file at the appropriate
