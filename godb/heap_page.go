@@ -72,6 +72,7 @@ func (h *heapPage) UpdateSlotNumAndSingleTupleSize() int {
 }
 
 // Construct a new heap page
+// read from file if pageNo is valid else is create a new page
 func newHeapPage(desc *TupleDesc, pageNo int, f *HeapFile) *heapPage {
 	var res = new(heapPage)
 	res.desc = desc

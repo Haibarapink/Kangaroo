@@ -179,13 +179,13 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	}
 
 	// allocate a new page
-	var newPage, err = bp.GetPage(f, maxPageNo, tid, WritePerm)
+	newPage, err := bp.NewPage(f, maxPageNo, tid, ReadPerm)
 	if err != nil {
 		return err
 	}
 	var hp = (*newPage).(*heapPage)
 	hp.insertTuple(t)
-	(*newPage).setDirty(true)
+	hp.setDirty(true)
 	f.flushPage(newPage)
 	return nil
 }
@@ -249,7 +249,6 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 	}
 	var hp = (*pg).(*heapPage)
 	var tupleIter = hp.tupleIter()
-	// TODO: some code goes here
 	return func() (*Tuple, error) {
 		var tuple, err = tupleIter()
 		if err != nil {

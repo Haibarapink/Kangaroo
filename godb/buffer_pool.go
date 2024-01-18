@@ -1,5 +1,7 @@
 package godb
 
+import "fmt"
+
 //BufferPool provides methods to cache pages that have been read from disk.
 //It has a fixed capacity to limit the total amount of memory used by GoDB.
 //It is also the primary way in which transactions are enforced, by using page
@@ -16,13 +18,13 @@ const (
 // 目前 bug是在于，每次都是新建一个page，而不是从缓存中取出来， 明天改
 type BufferPool struct {
 	// pageid to page
-	pages map[int]*heapPage
+	pages map[int]Page
 }
 
 // Create a new BufferPool with the specified number of pages
 func NewBufferPool(numPages int) *BufferPool {
-
-	return &BufferPool{}
+	var bp = BufferPool{pages: make(map[int]Page)}
+	return &bp
 }
 
 // Testing method -- iterate through all pages in the buffer pool
@@ -65,9 +67,25 @@ func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
 	// for lab1 temporarily ignore tid and perm and read the page from disk
-	var hpFile = file.(*HeapFile)
-	var hp heapPage = *newHeapPage(hpFile.desc, pageNo, hpFile)
-	var p Page = &hp
+	if bp.pages[pageNo] == nil {
+		pg, err := file.readPage(pageNo)
+		if err != nil {
+			return nil, err
+		}
+		bp.pages[pageNo] = *pg
+		return pg, nil
+	}
+	var p Page = bp.pages[pageNo]
+	return &p, nil
+}
 
+// New a page
+func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
+	heapPage := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
+	if heapPage == nil {
+		return nil, GoDBError{TupleNotFoundError, fmt.Sprintf("page %d not found", pageNo)}
+	}
+	var p Page = heapPage
+	bp.pages[pageNo] = p
 	return &p, nil
 }
