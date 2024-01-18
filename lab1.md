@@ -249,6 +249,7 @@ type Operator interface {
 }
 ```
 
+
 The Iterator method of each operator returns a function that iterates through its tuples.  Most operators take a "child" operator as a parameter to their constructor that they iterate through and apply their logic to.  Access methods like heap files that implement scans and index lookups don't have children:  they read data directly from files (or caches) and iterate through them.  The advantage of having operators all implement the iterator interface is that operators can be composed arbitrarily -- i.e., a join can read from a filter, or a filter can read from a project which can read from a join of two heap files, without needing to have specific implementations of each operator for each type of child operator.
 
 If you haven't written code that returns functions like this before, it can be a bit tricky.  We use a pattern in GoDB based on ["closures"](https://go.dev/tour/moretypes/25). Here is an example where we iterate through odd numbers using a closure. `newOdd()` returns a function (a closure) that increments `n` and returns the incremented value. Note that every time you call `newOdd()` it instantiates a new variable `n` that can be used by the returned function.
