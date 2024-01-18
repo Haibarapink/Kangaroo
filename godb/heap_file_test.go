@@ -170,11 +170,16 @@ func TestLoadCSV(t *testing.T) {
 	iter, _ := hf.Iterator(tid)
 	i := 0
 	for {
-		t, _ := iter()
-		if t == nil {
+		tp, err := iter()
+		if err != nil {
+			t.Errorf("Iterator error %s", err)
+			break
+		}
+		if tp == nil {
 			break
 		}
 		i = i + 1
+		// print
 	}
 	if i != 384 {
 		t.Errorf("HeapFile iterator expected 384 tuples, got %d", i)

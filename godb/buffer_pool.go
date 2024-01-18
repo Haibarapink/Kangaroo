@@ -1,6 +1,8 @@
 package godb
 
-import "fmt"
+import (
+	"container/list"
+)
 
 //BufferPool provides methods to cache pages that have been read from disk.
 //It has a fixed capacity to limit the total amount of memory used by GoDB.
@@ -15,15 +17,66 @@ const (
 	WritePerm RWPerm = iota
 )
 
+// replacer interface
+type Replacer interface {
+	touch(pageNo int)
+	evict() (int, error)
+}
+
+type FifoReplacer struct {
+	data *list.List
+}
+
+func NewFifoReplacer(num int) *FifoReplacer {
+	var fr = FifoReplacer{}
+	fr.data = list.New()
+	return &fr
+}
+
+func (fr *FifoReplacer) touch(fid int) {
+	for e := fr.data.Front(); e != nil; e = e.Next() {
+		if e.Value == fid {
+			fr.data.Remove(e)
+			break
+		}
+	}
+	fr.data.PushBack(fid)
+}
+
+func (fr *FifoReplacer) evict() (int, error) {
+	if fr.data.Len() == 0 {
+		return 0, GoDBError{BufferPoolFullError, "Can't evict from replacer which is empty"}
+	}
+	var e = fr.data.Front()
+	fr.data.Remove(e)
+	return e.Value.(int), nil
+}
+
 // 目前 bug是在于，每次都是新建一个page，而不是从缓存中取出来， 明天改
 type BufferPool struct {
-	// pageid to page
-	pages map[int]Page
+	pages []Page
+	// pageid to frameid
+	coord map[int]int
+	pin   []int
+
+	free_list list.List
+	// replacer
+	replacer Replacer
 }
 
 // Create a new BufferPool with the specified number of pages
 func NewBufferPool(numPages int) *BufferPool {
-	var bp = BufferPool{pages: make(map[int]Page)}
+	var bp = BufferPool{}
+
+	bp.pages = make([]Page, numPages)
+	bp.coord = make(map[int]int)
+	bp.replacer = NewFifoReplacer(numPages)
+	bp.pin = make([]int, numPages)
+
+	for i := 0; i < numPages; i++ {
+		bp.free_list.PushBack(i)
+	}
+
 	return &bp
 }
 
@@ -54,6 +107,27 @@ func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
 	return nil
 }
 
+func (bp *BufferPool) changeCoord(pageNo int, frameNo int) {
+	bp.coord[pageNo] = frameNo
+}
+
+func (bp *BufferPool) UnPin(pageNo int) {
+	fid, ok := bp.coord[pageNo]
+	if !ok {
+		return
+	}
+
+	bp.pin[fid]--
+	// assert
+	if bp.pin[fid] < 0 {
+		panic("bp.pin[fid] < 0")
+	}
+
+	if bp.pin[fid] == 0 {
+		bp.replacer.touch(fid)
+	}
+}
+
 // Retrieve the specified page from the specified DBFile (e.g., a HeapFile), on
 // behalf of the specified transaction. If a page is not cached in the buffer pool,
 // you can read it from disk uing [DBFile.readPage]. If the buffer pool is full (i.e.,
@@ -66,26 +140,92 @@ func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
 // one of the transactions in the deadlock]. You will likely want to store a list
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
-	// for lab1 temporarily ignore tid and perm and read the page from disk
-	if bp.pages[pageNo] == nil {
-		pg, err := file.readPage(pageNo)
+	fid, ok := bp.coord[pageNo]
+
+	if ok {
+		bp.pin[fid]++
+		return &bp.pages[fid], nil
+	}
+
+	if bp.free_list.Len() > 0 {
+		backElement := bp.free_list.Back()
+		fid = backElement.Value.(int)
+		bp.free_list.Remove(backElement)
+
+		bp.changeCoord(pageNo, fid)
+		bp.pin[fid]++
+
+		return &bp.pages[fid], nil
+	}
+
+	// read
+	fid, err := bp.replacer.evict()
+	if err != nil {
+		return nil, err
+	}
+
+	if bp.pages[fid].isDirty() {
+		// flush to disk
+		err := file.flushPage(&bp.pages[fid])
 		if err != nil {
 			return nil, err
 		}
-		bp.pages[pageNo] = *pg
-		return pg, nil
 	}
-	var p Page = bp.pages[pageNo]
-	return &p, nil
+
+	pg, err := file.readPage(pageNo)
+	if err != nil {
+		return nil, err
+	}
+	bp.pages[fid] = *pg
+	bp.changeCoord(pageNo, fid)
+	bp.pin[fid]++
+
+	return &bp.pages[fid], nil
+
 }
 
 // New a page
 func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
-	heapPage := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
-	if heapPage == nil {
-		return nil, GoDBError{TupleNotFoundError, fmt.Sprintf("page %d not found", pageNo)}
+	fid, ok := bp.coord[pageNo]
+
+	if ok {
+		bp.pin[fid]++
+		return &bp.pages[fid], nil
 	}
-	var p Page = heapPage
-	bp.pages[pageNo] = p
-	return &p, nil
+
+	if bp.free_list.Len() > 0 {
+		backElement := bp.free_list.Back()
+		fid = backElement.Value.(int)
+		bp.free_list.Remove(backElement)
+
+		pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
+		bp.pages[fid] = pg
+		bp.changeCoord(pageNo, fid)
+		bp.pin[fid]++
+		return &bp.pages[fid], nil
+	}
+
+	// read
+	fid, err := bp.replacer.evict()
+	if err != nil {
+		return nil, err
+	}
+
+	if bp.pages[fid].isDirty() {
+		// flush to disk
+		err := file.flushPage(&bp.pages[fid])
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
+	if err != nil {
+		return nil, err
+	}
+	bp.pages[fid] = pg
+	bp.changeCoord(pageNo, fid)
+	bp.pin[fid]++
+
+	return &bp.pages[fid], nil
 }

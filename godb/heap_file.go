@@ -165,10 +165,15 @@ func (f *HeapFile) readPage(pageNo int) (*Page, error) {
 func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	var i = 0
 	var bp = f.bufPool
-	var pg *Page
 	var maxPageNo = f.NumPages()
 	for i < maxPageNo {
-		pg, _ = bp.GetPage(f, i, tid, ReadPerm)
+		pg, err := bp.GetPage(f, i, tid, ReadPerm)
+		if err != nil {
+			return err
+		}
+
+		defer bp.UnPin(i)
+
 		var hp = (*pg).(*heapPage)
 		if hp.numUsedSlots < hp.numSlots {
 			rid, err := hp.insertTuple(t)
@@ -187,6 +192,9 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	if err != nil {
 		return err
 	}
+
+	defer bp.UnPin(maxPageNo)
+
 	var hp = (*newPage).(*heapPage)
 	rid, err := hp.insertTuple(t)
 	if err != nil {
@@ -214,6 +222,9 @@ func (f *HeapFile) deleteTuple(t *Tuple, tid TransactionID) error {
 	if err != nil {
 		return err
 	}
+
+	defer f.bufPool.UnPin(pageNo)
+
 	var hp = (*pg).(*heapPage)
 	hp.deleteTuple(rid)
 	(*pg).setDirty(true)
@@ -242,7 +253,8 @@ func (f *HeapFile) flushPage(p *Page) error {
 		return err2
 	}
 	f.file.Sync()
-	return nil //replace me
+	(*p).setDirty(false)
+	return nil
 }
 
 // [Operator] descriptor method -- return the TupleDesc for this HeapFile
@@ -271,9 +283,11 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 	return func() (*Tuple, error) {
 		var tuple, err = tupleIter()
 		if err != nil {
+			bp.UnPin(pageNo)
 			return nil, err
 		}
 		if tuple == nil {
+			bp.UnPin(pageNo) // Unpin previous page
 			pageNo++
 			if pageNo >= f.NumPages() {
 				return nil, nil
@@ -286,6 +300,7 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 			tupleIter = hp.tupleIter()
 			tuple, err = tupleIter()
 			if err != nil {
+				bp.UnPin(pageNo)
 				return nil, err
 			}
 		}
@@ -305,8 +320,5 @@ type heapHash struct {
 // heapHash struct as the key for a page, although you can use any struct that
 // does not contain a slice or a map that uniquely identifies the page.
 func (f *HeapFile) pageKey(pgNo int) any {
-
-	// TODO: some code goes here
-	return nil
-
+	return heapHash{f.file.Name(), pgNo}
 }
