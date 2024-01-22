@@ -76,8 +76,10 @@ func (h *heapPage) UpdateSlotNumAndSingleTupleSize() int {
 func newHeapPage(desc *TupleDesc, pageNo int, f *HeapFile) *heapPage {
 	var res = new(heapPage)
 	res.desc = desc
-	res.pageId = pageNo
 	res.UpdateSlotNumAndSingleTupleSize()
+	res.numUsedSlots = 0
+	res.pageId = pageNo
+
 	res.dirty = false
 	res.file = f
 

@@ -108,6 +108,12 @@ func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
 }
 
 func (bp *BufferPool) changeCoord(pageNo int, frameNo int) {
+	// old
+	oldPage := bp.pages[frameNo]
+	// old page id
+	oldPageId := oldPage.(*heapPage).pageId
+	// delete old
+	delete(bp.coord, oldPageId)
 	bp.coord[pageNo] = frameNo
 }
 
@@ -141,6 +147,10 @@ func (bp *BufferPool) UnPin(pageNo int) {
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
 	fid, ok := bp.coord[pageNo]
+	// tmp test
+	if pageNo == 3 {
+		println("pageNo == 3")
+	}
 
 	if ok {
 		bp.pin[fid]++
@@ -171,13 +181,14 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 			return nil, err
 		}
 	}
+	// must be first
+	bp.changeCoord(pageNo, fid)
 
 	pg, err := file.readPage(pageNo)
 	if err != nil {
 		return nil, err
 	}
 	bp.pages[fid] = *pg
-	bp.changeCoord(pageNo, fid)
 	bp.pin[fid]++
 
 	return &bp.pages[fid], nil
@@ -187,6 +198,11 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 // New a page
 func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
 	fid, ok := bp.coord[pageNo]
+
+	// tmp test
+	if pageNo == 3 {
+		println("pageNo == 3")
+	}
 
 	if ok {
 		bp.pin[fid]++
@@ -199,6 +215,7 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 		bp.free_list.Remove(backElement)
 
 		pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
+
 		bp.pages[fid] = pg
 		bp.changeCoord(pageNo, fid)
 		bp.pin[fid]++
@@ -219,12 +236,14 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 		}
 	}
 
+	// must be first
+	bp.changeCoord(pageNo, fid)
+
 	pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
 	if err != nil {
 		return nil, err
 	}
 	bp.pages[fid] = pg
-	bp.changeCoord(pageNo, fid)
 	bp.pin[fid]++
 
 	return &bp.pages[fid], nil

@@ -34,6 +34,9 @@ func testLimitCount(t *testing.T, n int) {
 					(*hf).flushPage(pg)
 					(*pg).setDirty(false)
 				}
+				// 佛了 不要Hack了
+				hp := (*pg).(*heapPage)
+				bp.UnPin(hp.pageId)
 			}
 		}
 

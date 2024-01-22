@@ -23,6 +23,9 @@ type HeapFile struct {
 
 	desc *TupleDesc
 	file *os.File
+
+	// tmp test
+	insertCnt int
 }
 
 // Create a HeapFile.
@@ -38,6 +41,9 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool) (*HeapFile, err
 	heapFile.desc = td
 	var err error
 	heapFile.file, err = os.OpenFile(fromFile, os.O_RDWR|os.O_CREATE, 0666)
+
+	// tmp test
+	heapFile.insertCnt = 0
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +126,7 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 				(*f).flushPage(pg)
 				(*pg).setDirty(false)
 			}
-
+			bp.UnPin(j)
 		}
 
 		//commit frequently, to avoid all pages in BP being full
@@ -166,24 +172,28 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	var i = 0
 	var bp = f.bufPool
 	var maxPageNo = f.NumPages()
+	// tmp test
+	f.insertCnt++
 	for i < maxPageNo {
 		pg, err := bp.GetPage(f, i, tid, ReadPerm)
 		if err != nil {
 			return err
 		}
 
-		defer bp.UnPin(i)
-
 		var hp = (*pg).(*heapPage)
+
 		if hp.numUsedSlots < hp.numSlots {
 			rid, err := hp.insertTuple(t)
 			if err != nil {
+				bp.UnPin(i)
 				return err
 			}
 			t.Rid = rid
 			(*pg).setDirty(true)
+			bp.UnPin(i)
 			return nil
 		}
+		bp.UnPin(i)
 		i++
 	}
 
@@ -193,16 +203,17 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 		return err
 	}
 
-	defer bp.UnPin(maxPageNo)
-
 	var hp = (*newPage).(*heapPage)
 	rid, err := hp.insertTuple(t)
 	if err != nil {
+		bp.UnPin(maxPageNo)
 		return err
 	}
 	t.Rid = rid
 	hp.setDirty(true)
 	f.flushPage(newPage)
+
+	bp.UnPin(maxPageNo)
 	return nil
 }
 
@@ -238,8 +249,10 @@ func (f *HeapFile) deleteTuple(t *Tuple, tid TransactionID) error {
 // that it is the ith page in the heap file), so you can determine where to write it
 // back.
 func (f *HeapFile) flushPage(p *Page) error {
+
 	// get heap page
 	var hp = (*p).(*heapPage)
+
 	f.file.Seek(int64(hp.pageId*PageSize), 0)
 	var bf, err = hp.toBuffer()
 	if err != nil {
@@ -279,6 +292,12 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 		return nil, err
 	}
 	var hp = (*pg).(*heapPage)
+	// defending
+	if hp.pageId != pageNo {
+		panic("page id not equal to page no")
+	}
+	println("pg tuple count: ", hp.numUsedSlots, " ", hp.numSlots, " in ", hp.pageId, " page count ", hp.file.NumPages())
+
 	var tupleIter = hp.tupleIter()
 	return func() (*Tuple, error) {
 		var tuple, err = tupleIter()
@@ -297,11 +316,34 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 				return nil, err
 			}
 			hp = (*pg).(*heapPage)
+
+			// defending codes
+			if hp.pageId != pageNo {
+				panic("page id not equal to page no")
+			}
+
+			// defending codes
+			if pageNo+1 < f.NumPages() {
+				// which means that there is a next page, so current page should be full
+				if hp.numUsedSlots < hp.numSlots {
+					panic("page not full , which should not happen")
+				}
+			}
+
+			// tmp test
+			println("pg tuple count: ", hp.numUsedSlots, " ", hp.numSlots, " in ", hp.pageId, " page count ", hp.file.NumPages())
+
 			tupleIter = hp.tupleIter()
 			tuple, err = tupleIter()
 			if err != nil {
 				bp.UnPin(pageNo)
 				return nil, err
+			}
+
+			// maybe no tuple in this page
+			if tuple == nil {
+				bp.UnPin(pageNo)
+				return nil, nil
 			}
 		}
 		return tuple, nil

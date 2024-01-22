@@ -116,6 +116,9 @@ func testSerializeN(t *testing.T, n int) {
 					(*hf).flushPage(pg)
 					(*pg).setDirty(false)
 				}
+				// 佛了 不要Hack了
+				hp := (*pg).(*heapPage)
+				bp.UnPin(hp.pageId)
 			}
 		}
 
@@ -155,6 +158,20 @@ func TestSerializeVeryLargeHeapFile(t *testing.T) {
 	testSerializeN(t, 4000)
 }
 
+// my own test
+func TestPinCount(t *testing.T) {
+	_, t1, _, hf, _, tid := makeTestVars()
+	for i := 0; i < 100000; i++ {
+		hf.insertTuple(&t1, tid)
+	}
+	pinArray := hf.bufPool.pin
+	for i := 0; i < len(pinArray); i++ {
+		if pinArray[i] != 0 {
+			t.Errorf("Pin count should be 0")
+		}
+	}
+}
+
 func TestLoadCSV(t *testing.T) {
 	_, _, _, hf, _, tid := makeTestVars()
 	f, err := os.Open("test_heap_file.csv")
@@ -166,6 +183,7 @@ func TestLoadCSV(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load failed, %s", err)
 	}
+
 	//should have 384 records
 	iter, _ := hf.Iterator(tid)
 	i := 0
