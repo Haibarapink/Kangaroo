@@ -47,8 +47,10 @@ func (fr *FifoReplacer) evict() (int, error) {
 	if fr.data.Len() == 0 {
 		return 0, GoDBError{BufferPoolFullError, "Can't evict from replacer which is empty"}
 	}
-	var e = fr.data.Front()
+	e := fr.data.Front()
 	fr.data.Remove(e)
+	// for lab1
+	fr.data.PushBack(e.Value.(int))
 	return e.Value.(int), nil
 }
 
@@ -57,7 +59,6 @@ type BufferPool struct {
 	pages []Page
 	// pageid to frameid
 	coord map[int]int
-	pin   []int
 
 	free_list list.List
 	// replacer
@@ -71,10 +72,10 @@ func NewBufferPool(numPages int) *BufferPool {
 	bp.pages = make([]Page, numPages)
 	bp.coord = make(map[int]int)
 	bp.replacer = NewFifoReplacer(numPages)
-	bp.pin = make([]int, numPages)
 
 	for i := 0; i < numPages; i++ {
 		bp.free_list.PushBack(i)
+		bp.replacer.touch(i)
 	}
 
 	return &bp
@@ -83,7 +84,13 @@ func NewBufferPool(numPages int) *BufferPool {
 // Testing method -- iterate through all pages in the buffer pool
 // and flush them using [DBFile.flushPage]. Does not need to be thread/transaction safe
 func (bp *BufferPool) FlushAllPages() {
-	// TODO: some code goes here
+	for i := 0; i < len(bp.pages); i++ {
+		if bp.pages[i] != nil && bp.pages[i].isDirty() {
+			file := bp.pages[i].getFile()
+			(*file).flushPage(&bp.pages[i])
+			bp.pages[i].setDirty(false)
+		}
+	}
 }
 
 // Abort the transaction, releasing locks. Because GoDB is FORCE/NO STEAL, none
@@ -110,28 +117,15 @@ func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
 func (bp *BufferPool) changeCoord(pageNo int, frameNo int) {
 	// old
 	oldPage := bp.pages[frameNo]
-	// old page id
-	oldPageId := oldPage.(*heapPage).pageId
-	// delete old
-	delete(bp.coord, oldPageId)
+	// defending codes
+	if oldPage != nil {
+		// old page id
+		oldPageId := oldPage.(*heapPage).pageId
+		// delete old
+		delete(bp.coord, oldPageId)
+	}
+
 	bp.coord[pageNo] = frameNo
-}
-
-func (bp *BufferPool) UnPin(pageNo int) {
-	fid, ok := bp.coord[pageNo]
-	if !ok {
-		return
-	}
-
-	bp.pin[fid]--
-	// assert
-	if bp.pin[fid] < 0 {
-		panic("bp.pin[fid] < 0")
-	}
-
-	if bp.pin[fid] == 0 {
-		bp.replacer.touch(fid)
-	}
 }
 
 // Retrieve the specified page from the specified DBFile (e.g., a HeapFile), on
@@ -147,13 +141,7 @@ func (bp *BufferPool) UnPin(pageNo int) {
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
 	fid, ok := bp.coord[pageNo]
-	// tmp test
-	if pageNo == 3 {
-		println("pageNo == 3")
-	}
-
 	if ok {
-		bp.pin[fid]++
 		return &bp.pages[fid], nil
 	}
 
@@ -163,7 +151,14 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		bp.free_list.Remove(backElement)
 
 		bp.changeCoord(pageNo, fid)
-		bp.pin[fid]++
+		bp.replacer.touch(fid)
+
+		pg, err := file.readPage(pageNo)
+		if err != nil {
+			return nil, err
+		}
+		(*pg).(*heapPage).pageId = pageNo
+		bp.pages[fid] = *pg
 
 		return &bp.pages[fid], nil
 	}
@@ -189,7 +184,6 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		return nil, err
 	}
 	bp.pages[fid] = *pg
-	bp.pin[fid]++
 
 	return &bp.pages[fid], nil
 
@@ -198,14 +192,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 // New a page
 func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
 	fid, ok := bp.coord[pageNo]
-
-	// tmp test
-	if pageNo == 3 {
-		println("pageNo == 3")
-	}
-
 	if ok {
-		bp.pin[fid]++
 		return &bp.pages[fid], nil
 	}
 
@@ -218,7 +205,6 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 
 		bp.pages[fid] = pg
 		bp.changeCoord(pageNo, fid)
-		bp.pin[fid]++
 		return &bp.pages[fid], nil
 	}
 
@@ -244,7 +230,6 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 		return nil, err
 	}
 	bp.pages[fid] = pg
-	bp.pin[fid]++
 
 	return &bp.pages[fid], nil
 }

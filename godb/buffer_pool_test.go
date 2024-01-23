@@ -29,9 +29,6 @@ func TestGetPage(t *testing.T) {
 				(*(*pg).getFile()).flushPage(pg)
 				(*pg).setDirty(false)
 			}
-			// 佛了 不要Hack了
-			hp := (*pg).(*heapPage)
-			bp.UnPin(hp.pageId)
 		}
 		// commit transaction
 		bp.CommitTransaction(tid)

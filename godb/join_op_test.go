@@ -115,9 +115,6 @@ func TestBigJoinOptional(t *testing.T) {
 							(*hf1).flushPage(pg)
 							(*pg).setDirty(false)
 						}
-						// 佛了 不要Hack了
-						hp := (*pg).(*heapPage)
-						bp.UnPin(hp.pageId)
 					}
 					for j := 0; j < hf2.NumPages(); j++ {
 						pg, err := bp.GetPage(hf2, j, tid, ReadPerm)

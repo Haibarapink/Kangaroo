@@ -106,6 +106,8 @@ func testSerializeN(t *testing.T, n int) {
 		// hack to force dirty pages to disk
 		// because CommitTransaction may not be implemented
 		// yet if this is called in lab 1 or 2
+		// get time
+
 		if i%10 == 0 {
 			for j := hf.NumPages() - 1; j > -1; j-- {
 				pg, err := bp.GetPage(hf, j, tid, ReadPerm)
@@ -116,17 +118,14 @@ func testSerializeN(t *testing.T, n int) {
 					(*hf).flushPage(pg)
 					(*pg).setDirty(false)
 				}
-				// 佛了 不要Hack了
-				hp := (*pg).(*heapPage)
-				bp.UnPin(hp.pageId)
 			}
 		}
 
 		//commit frequently to prevent buffer pool from filling
 		//todo fix
 		bp.CommitTransaction(tid)
-
 	}
+
 	bp.FlushAllPages()
 	bp2 := NewBufferPool(1)
 	hf2, _ := NewHeapFile(TestingFile, &td, bp2)
@@ -136,6 +135,7 @@ func testSerializeN(t *testing.T, n int) {
 	i := 0
 	for {
 		t, _ := iter()
+
 		if t == nil {
 			break
 		}
@@ -156,20 +156,6 @@ func TestSerializeLargeHeapFile(t *testing.T) {
 
 func TestSerializeVeryLargeHeapFile(t *testing.T) {
 	testSerializeN(t, 4000)
-}
-
-// my own test
-func TestPinCount(t *testing.T) {
-	_, t1, _, hf, _, tid := makeTestVars()
-	for i := 0; i < 100000; i++ {
-		hf.insertTuple(&t1, tid)
-	}
-	pinArray := hf.bufPool.pin
-	for i := 0; i < len(pinArray); i++ {
-		if pinArray[i] != 0 {
-			t.Errorf("Pin count should be 0")
-		}
-	}
 }
 
 func TestLoadCSV(t *testing.T) {

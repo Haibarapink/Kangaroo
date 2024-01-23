@@ -126,7 +126,6 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 				(*f).flushPage(pg)
 				(*pg).setDirty(false)
 			}
-			bp.UnPin(j)
 		}
 
 		//commit frequently, to avoid all pages in BP being full
@@ -185,15 +184,12 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 		if hp.numUsedSlots < hp.numSlots {
 			rid, err := hp.insertTuple(t)
 			if err != nil {
-				bp.UnPin(i)
 				return err
 			}
 			t.Rid = rid
 			(*pg).setDirty(true)
-			bp.UnPin(i)
 			return nil
 		}
-		bp.UnPin(i)
 		i++
 	}
 
@@ -206,14 +202,12 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	var hp = (*newPage).(*heapPage)
 	rid, err := hp.insertTuple(t)
 	if err != nil {
-		bp.UnPin(maxPageNo)
 		return err
 	}
 	t.Rid = rid
 	hp.setDirty(true)
 	f.flushPage(newPage)
 
-	bp.UnPin(maxPageNo)
 	return nil
 }
 
@@ -233,8 +227,6 @@ func (f *HeapFile) deleteTuple(t *Tuple, tid TransactionID) error {
 	if err != nil {
 		return err
 	}
-
-	defer f.bufPool.UnPin(pageNo)
 
 	var hp = (*pg).(*heapPage)
 	hp.deleteTuple(rid)
@@ -302,11 +294,9 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 	return func() (*Tuple, error) {
 		var tuple, err = tupleIter()
 		if err != nil {
-			bp.UnPin(pageNo)
 			return nil, err
 		}
 		if tuple == nil {
-			bp.UnPin(pageNo) // Unpin previous page
 			pageNo++
 			if pageNo >= f.NumPages() {
 				return nil, nil
@@ -330,19 +320,14 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 				}
 			}
 
-			// tmp test
-			println("pg tuple count: ", hp.numUsedSlots, " ", hp.numSlots, " in ", hp.pageId, " page count ", hp.file.NumPages())
-
 			tupleIter = hp.tupleIter()
 			tuple, err = tupleIter()
 			if err != nil {
-				bp.UnPin(pageNo)
 				return nil, err
 			}
 
 			// maybe no tuple in this page
 			if tuple == nil {
-				bp.UnPin(pageNo)
 				return nil, nil
 			}
 		}
