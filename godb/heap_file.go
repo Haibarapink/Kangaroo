@@ -288,7 +288,6 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 	if hp.pageId != pageNo {
 		panic("page id not equal to page no")
 	}
-	println("pg tuple count: ", hp.numUsedSlots, " ", hp.numSlots, " in ", hp.pageId, " page count ", hp.file.NumPages())
 
 	var tupleIter = hp.tupleIter()
 	return func() (*Tuple, error) {

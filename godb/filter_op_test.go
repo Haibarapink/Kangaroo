@@ -66,3 +66,40 @@ func TestStringFilter(t *testing.T) {
 		t.Errorf("unexpected number of results")
 	}
 }
+
+// My tests
+func TestString2Filter(t *testing.T) {
+	_, t1, t2, hf, _, tid := makeTestVars()
+	hf.insertTuple(&t1, tid)
+	hf.insertTuple(&t2, tid)
+
+	for i := 0; i < 1024; i++ {
+		hf.insertTuple(&t1, tid)
+	}
+
+	var f FieldType = FieldType{"name", "", StringType}
+	filt, err := NewStringFilter(&ConstExpr{StringField{"sam"}, StringType}, OpEq, &FieldExpr{f}, hf)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
+	iter, err := filt.Iterator(tid)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	if iter == nil {
+		t.Fatalf("Iterator was nil")
+	}
+
+	cnt := 0
+	for {
+		tup, _ := iter()
+		if tup == nil {
+			break
+		}
+		fmt.Printf("filter passed tup %d: %v\n", cnt, tup)
+		cnt++
+	}
+	if cnt != 1025 {
+		t.Errorf("unexpected number of results %d", cnt)
+	}
+}
