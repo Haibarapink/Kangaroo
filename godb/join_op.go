@@ -51,8 +51,9 @@ func NewStringJoin(left Operator, leftField Expr, right Operator, rightField Exp
 // the union of the fields in the descriptors of the left and right operators.
 // HINT: use the merge function you implemented for TupleDesc in lab1
 func (hj *EqualityJoin[T]) Descriptor() *TupleDesc {
-	// TODO: some code goes here
-	return nil
+	leftDesc := (*hj.left).Descriptor()
+	rightDesc := (*hj.right).Descriptor()
+	return leftDesc.merge(rightDesc)
 }
 
 // Join operator implementation.  This function should iterate over the results
@@ -70,7 +71,96 @@ func (hj *EqualityJoin[T]) Descriptor() *TupleDesc {
 // out.  To pass this test, you will need to use something other than a nested
 // loops join.
 func (joinOp *EqualityJoin[T]) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
+	// right iterator is inner
+	// left iterator is outer
 
-	// TODO: some code goes here
-	return nil, nil
+	// test count
+	// _leftIter, err := (*joinOp.left).Iterator(tid)
+	// leftCnt := 0
+	// for {
+	// 	_tp, err := _leftIter()
+	// 	if _tp == nil || err != nil {
+	// 		break
+	// 	}
+	// 	leftCnt++
+	// }
+
+	// _rightIter, err := (*joinOp.right).Iterator(tid)
+	// rightCnt := 0
+	// for {
+	// 	_tp, err := _rightIter()
+	// 	if _tp == nil || err != nil {
+	// 		break
+	// 	}
+	// 	rightCnt++
+	// }
+
+	// println(leftCnt, "?", rightCnt)
+
+	leftIter, err := (*joinOp.left).Iterator(tid)
+	if err != nil {
+		return nil, err
+	}
+	rightIter, err := (*joinOp.right).Iterator(tid)
+	if err != nil {
+		return nil, err
+	}
+
+	left, err := leftIter()
+	if left == nil || err != nil {
+		return nil, err
+	}
+
+	return func() (*Tuple, error) {
+		if left == nil {
+			return nil, nil
+		}
+		for {
+			right, err := rightIter()
+
+			if err != nil {
+				return nil, err
+			}
+
+			if right == nil {
+
+				left, err = leftIter()
+				if left == nil {
+					return nil, err
+				}
+
+				rightIter, err = (*joinOp.right).Iterator(tid)
+				if err != nil {
+					return nil, err
+				}
+
+				right, err = rightIter()
+				if right == nil || err != nil {
+					return nil, err
+				}
+			}
+
+			// right is not null
+			// left is not null
+			leftVal, err := joinOp.leftField.EvalExpr(left)
+			if err != nil {
+				return nil, err
+			}
+
+			rightVal, err := joinOp.rightField.EvalExpr(right)
+			if err != nil {
+				return nil, err
+			}
+
+			// println("[ ", left.ToString(), "] [", right.ToString(), "]")
+
+			if joinOp.getter(leftVal) == joinOp.getter(rightVal) {
+				return joinTuples(left, right), nil
+			}
+
+			// print
+
+		}
+	}, nil
+
 }

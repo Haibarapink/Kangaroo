@@ -58,7 +58,7 @@ func (fr *FifoReplacer) evict() (int, error) {
 type BufferPool struct {
 	pages []Page
 	// pageid to frameid
-	coord map[int]int
+	coord map[any]int
 
 	free_list list.List
 	// replacer
@@ -70,7 +70,7 @@ func NewBufferPool(numPages int) *BufferPool {
 	var bp = BufferPool{}
 
 	bp.pages = make([]Page, numPages)
-	bp.coord = make(map[int]int)
+	bp.coord = make(map[any]int)
 	bp.replacer = NewFifoReplacer(numPages)
 
 	for i := 0; i < numPages; i++ {
@@ -114,7 +114,7 @@ func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
 	return nil
 }
 
-func (bp *BufferPool) changeCoord(pageNo int, frameNo int) {
+func (bp *BufferPool) changeCoord(file DBFile, pageId int, frameNo int) {
 	// old
 	oldPage := bp.pages[frameNo]
 	// defending codes
@@ -122,10 +122,10 @@ func (bp *BufferPool) changeCoord(pageNo int, frameNo int) {
 		// old page id
 		oldPageId := oldPage.(*heapPage).pageId
 		// delete old
-		delete(bp.coord, oldPageId)
+		delete(bp.coord, (*oldPage.getFile()).pageKey(oldPageId))
 	}
 
-	bp.coord[pageNo] = frameNo
+	bp.coord[file.pageKey(pageId)] = frameNo
 }
 
 // Retrieve the specified page from the specified DBFile (e.g., a HeapFile), on
@@ -140,8 +140,9 @@ func (bp *BufferPool) changeCoord(pageNo int, frameNo int) {
 // one of the transactions in the deadlock]. You will likely want to store a list
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
-	fid, ok := bp.coord[pageNo]
-	if ok {
+	fid, ok := bp.coord[file.pageKey(pageNo)]
+	// not only pid , but also file is same
+	if ok && (*bp.pages[fid].getFile()) == file {
 		return &bp.pages[fid], nil
 	}
 
@@ -150,7 +151,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		fid = backElement.Value.(int)
 		bp.free_list.Remove(backElement)
 
-		bp.changeCoord(pageNo, fid)
+		bp.changeCoord(file, pageNo, fid)
 		bp.replacer.touch(fid)
 
 		pg, err := file.readPage(pageNo)
@@ -171,13 +172,14 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 
 	if bp.pages[fid].isDirty() {
 		// flush to disk
-		err := file.flushPage(&bp.pages[fid])
+		pgFile := *bp.pages[fid].getFile()
+		err := pgFile.flushPage(&bp.pages[fid])
 		if err != nil {
 			return nil, err
 		}
 	}
-	// must be first
-	bp.changeCoord(pageNo, fid)
+	// must be the first step
+	bp.changeCoord(file, pageNo, fid)
 
 	pg, err := file.readPage(pageNo)
 	if err != nil {
@@ -191,8 +193,9 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 
 // New a page
 func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
-	fid, ok := bp.coord[pageNo]
-	if ok {
+	fid, ok := bp.coord[file.pageKey(pageNo)]
+	// not only pid , but also file is same
+	if ok && (*bp.pages[fid].getFile()) == file {
 		return &bp.pages[fid], nil
 	}
 
@@ -204,7 +207,7 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 		pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
 
 		bp.pages[fid] = pg
-		bp.changeCoord(pageNo, fid)
+		bp.changeCoord(file, pageNo, fid)
 		return &bp.pages[fid], nil
 	}
 
@@ -216,14 +219,15 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 
 	if bp.pages[fid].isDirty() {
 		// flush to disk
-		err := file.flushPage(&bp.pages[fid])
+		pgFile := *bp.pages[fid].getFile()
+		err := pgFile.flushPage(&bp.pages[fid])
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	// must be first
-	bp.changeCoord(pageNo, fid)
+	bp.changeCoord(file, pageNo, fid)
 
 	pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
 	if err != nil {

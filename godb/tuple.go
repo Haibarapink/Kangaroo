@@ -216,6 +216,19 @@ func (t *Tuple) Print() {
 	}
 }
 
+func (t *Tuple) ToString() string {
+	var b bytes.Buffer
+	for i := 0; i < len(t.Fields); i++ {
+		switch f := t.Fields[i].(type) {
+		case IntField:
+			fmt.Fprintf(&b, " %d ", f.Value)
+		case StringField:
+			fmt.Fprintf(&b, " %s ", f.Value)
+		}
+	}
+	return b.String()
+}
+
 // Read the contents of a tuple with the specified [TupleDesc] from the
 // specified buffer, returning a Tuple.
 //

@@ -46,10 +46,10 @@ func TestJoin(t *testing.T) {
 		}
 		if t.equals(outT1) {
 			cntOut1++
+
 		} else if t.equals(outT2) {
 			cntOut2++
 		}
-		//fmt.Printf("got tuple %v: %v\n", cnt, t)
 		cnt++
 	}
 	if cnt != 5 {
