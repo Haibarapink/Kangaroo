@@ -69,40 +69,87 @@ func (a *CountAggState) GetTupleDesc() *TupleDesc {
 type SumAggState[T Number] struct {
 	// TODO: some code goes here
 	// TODO add fields that can help implement the aggregation state
+	CountInt   int64
+	CountFloat float64
+
+	alias  string
+	expr   Expr
+	getter func(DBValue) any
 }
 
 func (a *SumAggState[T]) Copy() AggState {
-	// TODO: some code goes here
-	return nil // TODO change me
+	newAggState := &SumAggState[T]{}
+	newAggState.CountInt = a.CountInt
+	newAggState.CountFloat = a.CountFloat
+	newAggState.alias = a.alias
+	newAggState.expr = a.expr
+	newAggState.getter = a.getter
+
+	return newAggState
 }
 
 func intAggGetter(v DBValue) any {
-	// TODO: some code goes here
-	return nil // TODO change me
+	return v.(IntField).Value
 }
 
 func stringAggGetter(v DBValue) any {
-	// TODO: some code goes here
-	return nil // TODO change me
+	return v.(StringField).Value
 }
 
 func (a *SumAggState[T]) Init(alias string, expr Expr, getter func(DBValue) any) error {
-	// TODO: some code goes here
-	return nil // TODO change me
+	a.CountInt = 0
+	a.CountFloat = 0
+	a.expr = expr
+	a.alias = alias
+	a.getter = getter
+	return nil
 }
 
 func (a *SumAggState[T]) AddTuple(t *Tuple) {
-	// TODO: some code goes here
+	if t == nil {
+		panic("t is nil")
+	}
+	v, err := a.expr.EvalExpr(t)
+	if err != nil {
+		return
+	}
+	val := a.getter(v)
+	switch typeOfVal := val.(type) {
+	case int64:
+		a.CountInt += typeOfVal
+	case float64:
+		a.CountFloat += typeOfVal
+	default:
+		panic("invalid type")
+	}
 }
 
 func (a *SumAggState[T]) GetTupleDesc() *TupleDesc {
-	// TODO: some code goes here
-	return nil // TODO change me
+	var ft FieldType
+	switch any(a.CountInt).(type) {
+	case string:
+		ft = FieldType{a.alias, "", StringType}
+	default:
+		ft = FieldType{a.alias, "", IntType}
+	}
+	fts := []FieldType{ft}
+	td := TupleDesc{}
+	td.Fields = fts
+	return &td
 }
 
 func (a *SumAggState[T]) Finalize() *Tuple {
-	// TODO: some code goes here
-	return nil // TODO change me
+	td := a.GetTupleDesc()
+	var f any
+	switch any(a.CountInt).(type) {
+	case string:
+		f = StringField{any(a.CountInt).(string)}
+	default:
+		f = IntField{any(a.CountInt).(int64)}
+	}
+	fs := []DBValue{f}
+	t := Tuple{*td, fs, nil}
+	return &t
 }
 
 // Implements the aggregation state for AVG

@@ -73,30 +73,6 @@ func (hj *EqualityJoin[T]) Descriptor() *TupleDesc {
 func (joinOp *EqualityJoin[T]) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 	// right iterator is inner
 	// left iterator is outer
-
-	// test count
-	// _leftIter, err := (*joinOp.left).Iterator(tid)
-	// leftCnt := 0
-	// for {
-	// 	_tp, err := _leftIter()
-	// 	if _tp == nil || err != nil {
-	// 		break
-	// 	}
-	// 	leftCnt++
-	// }
-
-	// _rightIter, err := (*joinOp.right).Iterator(tid)
-	// rightCnt := 0
-	// for {
-	// 	_tp, err := _rightIter()
-	// 	if _tp == nil || err != nil {
-	// 		break
-	// 	}
-	// 	rightCnt++
-	// }
-
-	// println(leftCnt, "?", rightCnt)
-
 	leftIter, err := (*joinOp.left).Iterator(tid)
 	if err != nil {
 		return nil, err
