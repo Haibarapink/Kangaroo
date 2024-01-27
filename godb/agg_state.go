@@ -125,13 +125,7 @@ func (a *SumAggState[T]) AddTuple(t *Tuple) {
 }
 
 func (a *SumAggState[T]) GetTupleDesc() *TupleDesc {
-	var ft FieldType
-	switch any(a.CountInt).(type) {
-	case string:
-		ft = FieldType{a.alias, "", StringType}
-	default:
-		ft = FieldType{a.alias, "", IntType}
-	}
+	var ft FieldType = FieldType{a.alias, "", IntType}
 	fts := []FieldType{ft}
 	td := TupleDesc{}
 	td.Fields = fts
@@ -140,13 +134,7 @@ func (a *SumAggState[T]) GetTupleDesc() *TupleDesc {
 
 func (a *SumAggState[T]) Finalize() *Tuple {
 	td := a.GetTupleDesc()
-	var f any
-	switch any(a.CountInt).(type) {
-	case string:
-		f = StringField{any(a.CountInt).(string)}
-	default:
-		f = IntField{any(a.CountInt).(int64)}
-	}
+	f := IntField{a.CountInt}
 	fs := []DBValue{f}
 	t := Tuple{*td, fs, nil}
 	return &t
@@ -158,30 +146,73 @@ func (a *SumAggState[T]) Finalize() *Tuple {
 type AvgAggState[T Number] struct {
 	// TODO: some code goes here
 	// TODO add fields that can help implement the aggregation state
+	count     int64
+	sumInt    float64
+	avgResInt int64
+
+	sumFloat    int64
+	avgResFloat float64
+
+	alias  string
+	expr   Expr
+	getter func(DBValue) any
 }
 
 func (a *AvgAggState[T]) Copy() AggState {
-	// TODO: some code goes here
-	return nil // TODO change me
+	copy := AvgAggState[T]{}
+	copy.count = a.count
+	copy.sumInt = a.sumInt
+	copy.sumFloat = a.sumFloat
+
+	copy.alias = a.alias
+	copy.expr = a.expr
+	copy.getter = a.getter
+
+	return &copy
 }
 
 func (a *AvgAggState[T]) Init(alias string, expr Expr, getter func(DBValue) any) error {
-	// TODO: some code goes here
-	return nil // TODO change me
+	a.count = 0
+	a.sumInt = 0
+	a.sumFloat = 0
+	a.expr = expr
+	a.alias = alias
+	a.getter = getter
+	return nil
 }
 
 func (a *AvgAggState[T]) AddTuple(t *Tuple) {
-	// TODO: some code goes here
+	v, err := a.expr.EvalExpr(t)
+	if err != nil {
+		panic(err)
+	}
+	val := a.getter(v)
+	switch typeOfVal := val.(type) {
+	case int64:
+		a.sumInt += float64(typeOfVal)
+	case float64:
+		a.sumFloat += int64(typeOfVal)
+	default:
+		panic("invalid type")
+	}
+	a.count++
 }
 
 func (a *AvgAggState[T]) GetTupleDesc() *TupleDesc {
-	// TODO: some code goes here
-	return nil // TODO change me
+	var ft FieldType = FieldType{a.alias, "", IntType}
+	fts := []FieldType{ft}
+	td := TupleDesc{}
+	td.Fields = fts
+	return &td
 }
 
 func (a *AvgAggState[T]) Finalize() *Tuple {
-	// TODO: some code goes here
-	return nil // TODO change me
+	td := a.GetTupleDesc()
+	a.avgResInt = int64(a.sumInt / float64(a.count))
+	var f IntField = IntField{a.avgResInt}
+	fs := []DBValue{f}
+	t := Tuple{*td, fs, nil}
+	return &t
 }
 
 // Implements the aggregation state for MAX

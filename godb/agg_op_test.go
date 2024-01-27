@@ -33,6 +33,37 @@ func TestSimpleSumAgg(t *testing.T) {
 	}
 }
 
+// my test, not in the original
+// and they dont provide the test for avg-agg operator
+func TestSimpleAvgAgg(t *testing.T) {
+	_, t1, t2, hf, _, tid := makeTestVars()
+
+	hf.insertTuple(&t1, tid)
+	hf.insertTuple(&t2, tid)
+	aa := AvgAggState[int64]{}
+	expr := FieldExpr{t1.Desc.Fields[1]}
+	aa.Init("Avg", &expr, intAggGetter)
+	agg := NewAggregator([]AggState{&aa}, hf)
+	iter, err := agg.Iterator(tid)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	if iter == nil {
+		t.Fatalf("Iterator was nil")
+	}
+	tup, err := iter()
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+	if tup == nil {
+		t.Fatalf("Expected non-null tuple")
+	}
+	avg := tup.Fields[0].(IntField).Value
+	if avg != 512 {
+		t.Errorf("unexpected sum")
+	}
+}
+
 func TestMinStringAgg(t *testing.T) {
 	_, t1, t2, hf, _, tid := makeTestVars()
 	hf.insertTuple(&t1, tid)
