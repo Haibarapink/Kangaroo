@@ -11,6 +11,7 @@ posted there. Some bugs may have already been found, so do take a look at the
 page to get the latest version/ patches for the lab code.
 -->
 
+
 In the lab assignments in 6.5830/6.5831 you will write a basic database
 management system called GoDB. For this lab, you will focus on implementing
 the core modules required to access stored data on disk; in future labs, you

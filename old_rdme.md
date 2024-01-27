@@ -22,14 +22,19 @@ publicly available**
 
 ## Contents
 
-- [Learning Git](#learning-git)
-- [Setting up GitHub](#setting-up-github)
-- [Installing Git](#installing-git)
-- [Setting up Git](#setting-up-git)
-- [Getting Newly Released Labs](#getting-newly-released-labs)
-- [Submitting Labs](#submitting-labs)
-- [Word of Caution](#word-of-caution)
-- [Help!](#help)
+
+- [6.5830/6.5831 Labs](#6583065831-labs)
+  - [Contents](#contents)
+  - [Learning Git](#learning-git)
+  - [Setting Up GitHub](#setting-up-github)
+    - [Installing git](#installing-git)
+  - [Setting Up Git](#setting-up-git)
+  - [Getting Newly Released Labs](#getting-newly-released-labs)
+  - [Submitting Labs](#submitting-labs)
+  - [Submitting a bug](#submitting-a-bug)
+  - [Grading](#grading)
+  - [Word of Caution](#word-of-caution)
+  - [Help!](#help)
 
 ## <a name="learning-git">Learning Git</a>
 

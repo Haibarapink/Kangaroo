@@ -19,6 +19,7 @@ You should begin with the code you submitted for Lab 2 (if you did not submit co
 
 You will need to add these new files to your release. The easiest way to do this is to navigate to your project directory (probably called `go-db-hw-2023`) and pull from the master GitHub repository:
 
+
 ```
 $ cd go-db-hw-2023
 $ git pull upstream main
