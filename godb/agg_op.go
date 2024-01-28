@@ -42,6 +42,12 @@ func NewAggregator(emptyAggState []AggState, child Operator) *Aggregator {
 // HINT: use the merge function you implemented for TupleDesc in lab1 to merge the two TupleDescs
 func (a *Aggregator) Descriptor() *TupleDesc {
 	var desc TupleDesc
+	if a.groupByFields != nil {
+		for _, expr := range a.groupByFields {
+			desc.Fields = append(desc.Fields, expr.GetExprType())
+		}
+	}
+
 	for _, as := range a.newAggState {
 		desc.Fields = append(desc.Fields, as.GetTupleDesc().Fields...)
 	}
@@ -186,14 +192,15 @@ func getFinalizedTuplesIterator(a *Aggregator, groupByList []*Tuple, aggState ma
 			return nil, nil
 		}
 
-		var tup *Tuple = nil
-		curKey := groupByList[curGbyTuple].tupleKey()
+		var tup Tuple = *groupByList[curGbyTuple]
+		curKey := tup.tupleKey()
 		curAggStates := aggState[curKey]
 		for i := 0; i < len(*curAggStates); i++ {
-			tup = joinTuples(tup, (*curAggStates)[i].Finalize())
+			newTup := (*curAggStates)[i].Finalize()
+			tup = *joinTuples(&tup, newTup)
 		}
 
 		curGbyTuple++
-		return tup, nil
+		return &tup, nil
 	}
 }
