@@ -229,6 +229,7 @@ func (p *heapPage) tupleIter() func() (*Tuple, error) {
 			return nil, nil
 		}
 		var res = &p.tuples[i]
+		res.Rid = Rid{p.pageId, i}
 		i++
 		return res, nil
 	}
