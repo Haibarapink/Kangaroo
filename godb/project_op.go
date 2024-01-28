@@ -4,8 +4,11 @@ type Project struct {
 	selectFields []Expr // required fields for parser
 	outputNames  []string
 	child        Operator
-	//add additional fields here
-	// TODO: some code goes here
+
+	distinct bool
+
+	// distinct tuples seen so farm, and key is from tuple.key()
+	seenTuples map[any]bool
 }
 
 // Project constructor -- should save the list of selected field, child, and the child op.
@@ -14,8 +17,13 @@ type Project struct {
 // selectFields; throws error if not), distinct is for noting whether the projection reports
 // only distinct results, and child is the child operator.
 func NewProjectOp(selectFields []Expr, outputNames []string, distinct bool, child Operator) (Operator, error) {
-	// TODO: some code goes here
-	return nil, nil
+	var p Project
+	p.child = child
+	p.selectFields = selectFields
+	p.outputNames = outputNames
+	p.distinct = distinct
+	p.seenTuples = make(map[any]bool)
+	return &p, nil
 }
 
 // Return a TupleDescriptor for this projection. The returned descriptor should contain
@@ -23,9 +31,19 @@ func NewProjectOp(selectFields []Expr, outputNames []string, distinct bool, chil
 // as specified in the constructor.
 // HINT: you can use expr.GetExprType() to get the field type
 func (p *Project) Descriptor() *TupleDesc {
-	// TODO: some code goes here
-	return nil
-
+	var desc TupleDesc
+	for i := 0; i < len(p.selectFields); i++ {
+		if len(p.outputNames) > i {
+			var field FieldType
+			field.Fname = p.outputNames[i]
+			field.Ftype = p.selectFields[i].GetExprType().Ftype
+			field.TableQualifier = p.selectFields[i].GetExprType().TableQualifier
+			desc.Fields = append(desc.Fields, field)
+		} else {
+			desc.Fields = append(desc.Fields, p.selectFields[i].GetExprType())
+		}
+	}
+	return &desc
 }
 
 // Project operator implementation.  This function should iterate over the
@@ -35,6 +53,40 @@ func (p *Project) Descriptor() *TupleDesc {
 // distinct tuples seen so far.  Note that support for the distinct keyword is
 // optional as specified in the lab 2 assignment.
 func (p *Project) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
-	// TODO: some code goes here
-	return nil, nil
+	childIter, err := p.child.Iterator(tid)
+	if err != nil {
+		return nil, err
+	}
+
+	return func() (*Tuple, error) {
+		for {
+			tp, err := childIter()
+			if err != nil {
+				return nil, err
+			}
+			if tp == nil {
+				return nil, nil
+			}
+
+			var newTuple Tuple
+			for i := 0; i < len(p.selectFields); i++ {
+				val, err := p.selectFields[i].EvalExpr(tp)
+				if err != nil {
+					return nil, err
+				}
+				newTuple.Fields = append(newTuple.Fields, val)
+			}
+
+			if p.distinct {
+				key := newTuple.tupleKey()
+				if p.seenTuples[key] {
+					continue
+				}
+				p.seenTuples[key] = true
+			}
+
+			newTuple.Desc = *p.Descriptor()
+			return &newTuple, nil
+		}
+	}, nil
 }
