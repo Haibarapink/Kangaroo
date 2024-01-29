@@ -72,6 +72,7 @@ func (t TupleSortedSlice) Less(a, b int) bool {
 			leftGreater = evalPred(curType.Value, right.(StringField).Value, OpGt)
 			equal = evalPred(curType.Value, right.(StringField).Value, OpEq)
 		}
+		// If the two values are equal, then we need to compare the next field
 		if equal {
 			continue
 		}
