@@ -2,6 +2,7 @@ package godb
 
 import (
 	"container/list"
+	"sync"
 )
 
 //BufferPool provides methods to cache pages that have been read from disk.
@@ -63,6 +64,9 @@ type BufferPool struct {
 	free_list list.List
 	// replacer
 	replacer Replacer
+
+	// sync
+	mu sync.Mutex
 }
 
 // Create a new BufferPool with the specified number of pages
@@ -140,6 +144,9 @@ func (bp *BufferPool) changeCoord(file DBFile, pageId int, frameNo int) {
 // one of the transactions in the deadlock]. You will likely want to store a list
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+
 	fid, ok := bp.coord[file.pageKey(pageNo)]
 	// not only pid , but also file is same
 	if ok && (*bp.pages[fid].getFile()) == file {
