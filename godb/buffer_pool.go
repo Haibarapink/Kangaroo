@@ -66,7 +66,8 @@ type BufferPool struct {
 	replacer Replacer
 
 	// sync
-	mu sync.Mutex
+	mu  sync.Mutex
+	mgr LockManager
 }
 
 // Create a new BufferPool with the specified number of pages
