@@ -12,7 +12,7 @@ type LockManager struct {
 }
 
 func NewLockManager() *LockManager {
-	return &LockManager{}
+	return &LockManager{make(map[int]ReqLockType)}
 }
 
 func (mgr *LockManager) AcquireLock(tid TransactionID, pageNo int, perm RWPerm) bool {
@@ -20,9 +20,13 @@ func (mgr *LockManager) AcquireLock(tid TransactionID, pageNo int, perm RWPerm) 
 	if !ok || req.Perm == ReadPerm && perm == ReadPerm {
 		if !ok {
 			req = ReqLockType{}
+			req.Perm = perm
 		}
 		req.Tid = append(req.Tid, tid)
-		req.RdCnt++
+		if req.Perm == ReadPerm {
+			req.RdCnt++
+		}
+		mgr.reqMap[pageNo] = req
 		return true
 	}
 	return false
@@ -33,11 +37,26 @@ func (mgr *LockManager) ReleaseLock(tid TransactionID, pageNo int) {
 	if !ok {
 		return
 	}
+	ok = false
+	p := 0
+	for i, t := range req.Tid {
+		if t == tid {
+			p = i
+			ok = true
+			break
+		}
+	}
+
+	if !ok {
+		panic("ReleaseLock fail because tid not existing")
+	}
+
 	delete(mgr.reqMap, pageNo)
 
 	if req.Perm == ReadPerm {
 		req.RdCnt--
 		if req.RdCnt != 0 {
+			req.Tid = append(req.Tid[:p], req.Tid[p+1:]...)
 			mgr.reqMap[pageNo] = req
 		}
 	}
