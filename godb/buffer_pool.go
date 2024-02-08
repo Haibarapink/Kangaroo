@@ -3,6 +3,7 @@ package godb
 import (
 	"container/list"
 	"sync"
+	"time"
 )
 
 //BufferPool provides methods to cache pages that have been read from disk.
@@ -146,6 +147,24 @@ func (bp *BufferPool) changeCoord(file DBFile, pageId int, frameNo int) {
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
 	bp.mu.Lock()
+
+	// try fetching lock from lock manager
+	fetchLockOk := false
+	for !fetchLockOk {
+		fetchLockOk = bp.mgr.AcquireLock(tid, pageNo, perm)
+		if fetchLockOk {
+			// ok
+			break
+		}
+		// otherwise
+		// block current thread
+		bp.mu.Unlock()
+		time.Sleep(100) // sleep for 100 ms
+		bp.mu.Lock()
+	}
+
+	// get page lock successful
+	// defer unlock
 	defer bp.mu.Unlock()
 
 	fid, ok := bp.coord[file.pageKey(pageNo)]
