@@ -4,7 +4,61 @@ import (
 	"testing"
 )
 
-func TestLockingDataStruct(t *testing.T) {}
+// my test
+func TestCommitRight(t *testing.T) {
+	_, _, t2, hf, bp, _ := makeTestVars()
+	tid := NewTID()
+	bp.BeginTransaction(tid)
+	hf.insertTuple(&t2, tid)
+	hf.insertTuple(&t2, tid)
+	bp.CommitTransaction(tid)
+	iter, err := hf.Iterator(tid)
+	if err != nil {
+		panic("err should not exist")
+	}
+	tuple, err := iter()
+	if err != nil {
+		panic("err should not exist")
+	}
+	tuple, err = iter()
+	if tuple != nil {
+		panic("there should be no tuple anymore")
+	}
+}
+
+func TestLockingDataStruct(t *testing.T) {
+	_, t1, t2, hf, bp, _ := makeTestVars()
+	tid := NewTID()
+	bp.BeginTransaction(tid)
+	hf.insertTuple(&t2, tid)
+	bp.CommitTransaction(tid)
+
+	tid2 := NewTID()
+	bp.BeginTransaction(tid2)
+	err := hf.insertTuple(&t1, tid2)
+	if err != nil {
+		t.Errorf("%s", err.Error())
+	}
+	bp.AbortTransaction(tid2)
+	iter, err := hf.Iterator(tid2)
+	if err != nil {
+		t.Errorf("%s", err.Error())
+	}
+	cnt := 0
+	for {
+		tuple, err := iter()
+		if tuple == nil && err != nil {
+			break
+		}
+		if err != nil {
+			t.Errorf("%s", err.Error())
+		}
+		cnt++
+	}
+	if cnt != 1 {
+		t.Errorf("count {%d} is not %d", cnt, 1)
+	}
+}
 
 func TestGetPage(t *testing.T) {
 	_, t1, t2, hf, bp, _ := makeTestVars()

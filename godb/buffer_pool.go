@@ -110,6 +110,12 @@ func (bp *BufferPool) FlushAllPages() {
 	}
 }
 
+func (bp *BufferPool) RemoveFromLockMgr(tid TransactionID, p Page) {
+	pid := p.(*heapPage).pageId
+	key := (*p.getFile()).pageKey(pid)
+	bp.mgr.ReleaseLock(tid, key)
+}
+
 func (bp *BufferPool) releasePageLock(tid TransactionID, forceWrite bool) {
 	pidList, ok := bp.tranFetchedPid[tid]
 	if !ok {
@@ -142,6 +148,25 @@ func (bp *BufferPool) releasePageLock(tid TransactionID, forceWrite bool) {
 // release locks to abort. You do not need to implement this for lab 1.
 func (bp *BufferPool) AbortTransaction(tid TransactionID) {
 	bp.releasePageLock(tid, false)
+
+	// reread dirty page
+	pidList := bp.tranFetchedPid[tid]
+	for _, val := range *pidList {
+		pid := val.Pid
+		file := val.File
+		key := file.pageKey(pid)
+		fid, ok := bp.coord[key]
+		if !ok {
+			panic("fid should exist")
+		}
+		page, err := file.readPage(pid)
+		if err != nil {
+			panic("reading page shouldn't fail")
+		}
+		bp.pages[fid] = *page
+	}
+
+	delete(bp.tranFetchedPid, tid)
 }
 
 // Commit the transaction, releasing locks. Because GoDB is FORCE/NO STEAL, none
@@ -151,6 +176,7 @@ func (bp *BufferPool) AbortTransaction(tid TransactionID) {
 // WAL. You do not need to implement this for lab 1.
 func (bp *BufferPool) CommitTransaction(tid TransactionID) {
 	bp.releasePageLock(tid, true)
+	delete(bp.tranFetchedPid, tid)
 }
 
 func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
@@ -205,8 +231,11 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 	}
 
 	// get page lock successfully
-	currTidPageFetchedList := bp.tranFetchedPid[tid]
-	*currTidPageFetchedList = append(*currTidPageFetchedList, FetchedPageType{pageNo, perm, file})
+	currTidPageFetchedList, ok := bp.tranFetchedPid[tid]
+	if ok {
+		// with transaction
+		*currTidPageFetchedList = append(*currTidPageFetchedList, FetchedPageType{pageNo, perm, file})
+	}
 
 	fid, ok := bp.coord[file.pageKey(pageNo)]
 	// not only pid , but also file is same

@@ -15,6 +15,7 @@ func NewLockManager() *LockManager {
 	return &LockManager{make(map[any]ReqLockType)}
 }
 
+// 注意update锁
 func (mgr *LockManager) AcquireLock(tid TransactionID, pageKey any, perm RWPerm) bool {
 	req, ok := mgr.reqMap[pageKey]
 	if !ok || req.Perm == ReadPerm && perm == ReadPerm {

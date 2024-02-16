@@ -173,7 +173,7 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	// tmp test
 	f.insertCnt++
 	for i < maxPageNo {
-		pg, err := bp.GetPage(f, i, tid, ReadPerm)
+		pg, err := bp.GetPage(f, i, tid, WritePerm)
 		if err != nil {
 			return err
 		}
@@ -193,7 +193,7 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	}
 
 	// allocate a new page
-	newPage, err := bp.NewPage(f, maxPageNo, tid, ReadPerm)
+	newPage, err := bp.NewPage(f, maxPageNo, tid, WritePerm)
 	if err != nil {
 		return err
 	}
