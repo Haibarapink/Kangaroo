@@ -4,6 +4,8 @@ import (
 	"testing"
 )
 
+func TestLockingDataStruct(t *testing.T) {}
+
 func TestGetPage(t *testing.T) {
 	_, t1, t2, hf, bp, _ := makeTestVars()
 	tid := NewTID()

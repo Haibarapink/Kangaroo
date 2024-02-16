@@ -22,7 +22,13 @@ func (bfp *bfp_demo) GetPage(tid TransactionID) {
 
 	ok := false
 	for !ok {
-		ok = bfp.mgr.AcquireLock(tid, 1, ReadPerm)
+		perm := ReadPerm
+		if *tid%2 == 0 {
+			perm = ReadPerm
+		} else {
+			perm = WritePerm
+		}
+		ok = bfp.mgr.AcquireLock(tid, 1, perm)
 		if ok {
 			break
 		}
@@ -32,8 +38,7 @@ func (bfp *bfp_demo) GetPage(tid TransactionID) {
 		bfp.mu.Lock() // try lock
 	}
 	bfp.i++
-
-	println(*tid, " Win ", bfp.i)
+	bfp.mgr.ReleaseLock(tid, 1)
 }
 
 func TestAlgo(t *testing.T) {
@@ -45,7 +50,7 @@ func TestAlgo(t *testing.T) {
 		}()
 	}
 
-	time.Sleep(3000)
+	time.Sleep(300000)
 
 	if bfp.i != cnt {
 		t.Errorf("i {%d} != cnt {%d}", bfp.i, cnt)

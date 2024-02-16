@@ -15,7 +15,6 @@ import (
 // HeapFile is a public class because external callers may wish to instantiate
 // database tables using the method [LoadFromCSV]
 type HeapFile struct {
-	// TODO: some code goes here
 	// HeapFile should include the fields below;  you may want to add
 	// additional fields
 	bufPool *BufferPool

@@ -56,19 +56,26 @@ func (fr *FifoReplacer) evict() (int, error) {
 	return e.Value.(int), nil
 }
 
-// 目前 bug是在于，每次都是新建一个page，而不是从缓存中取出来， 明天改
+type FetchedPageType struct {
+	Pid  int
+	Perm RWPerm
+	File DBFile
+}
+
 type BufferPool struct {
 	pages []Page
 	// pageid to frameid
 	coord map[any]int
 
-	free_list list.List
+	freeList list.List
 	// replacer
 	replacer Replacer
 
 	// sync
 	mu  sync.Mutex
-	mgr LockManager
+	mgr *LockManager
+	// transaction
+	tranFetchedPid map[TransactionID]*[]FetchedPageType
 }
 
 // Create a new BufferPool with the specified number of pages
@@ -79,8 +86,12 @@ func NewBufferPool(numPages int) *BufferPool {
 	bp.coord = make(map[any]int)
 	bp.replacer = NewFifoReplacer(numPages)
 
+	bp.mgr = NewLockManager()
+
+	bp.tranFetchedPid = make(map[TransactionID]*[]FetchedPageType)
+
 	for i := 0; i < numPages; i++ {
-		bp.free_list.PushBack(i)
+		bp.freeList.PushBack(i)
 		bp.replacer.touch(i)
 	}
 
@@ -99,11 +110,38 @@ func (bp *BufferPool) FlushAllPages() {
 	}
 }
 
+func (bp *BufferPool) releasePageLock(tid TransactionID, forceWrite bool) {
+	pidList, ok := bp.tranFetchedPid[tid]
+	if !ok {
+		return
+	}
+	for _, val := range *pidList {
+		file := val.File
+		pid := val.Pid
+		perm := val.Perm
+		key := file.pageKey(pid)
+		if perm == WritePerm && forceWrite {
+			// fetch page first
+			fid, ok := bp.coord[key]
+			if !ok {
+				panic("fid doesn't exist")
+			}
+			page := bp.pages[fid]
+			err := file.flushPage(&page)
+			if err != nil {
+				panic("should not fail(assumed by lab document")
+			}
+		}
+		bp.mgr.ReleaseLock(tid, key)
+	}
+
+}
+
 // Abort the transaction, releasing locks. Because GoDB is FORCE/NO STEAL, none
 // of the pages tid has dirtired will be on disk so it is sufficient to just
 // release locks to abort. You do not need to implement this for lab 1.
 func (bp *BufferPool) AbortTransaction(tid TransactionID) {
-	// TODO: some code goes here
+	bp.releasePageLock(tid, false)
 }
 
 // Commit the transaction, releasing locks. Because GoDB is FORCE/NO STEAL, none
@@ -112,11 +150,12 @@ func (bp *BufferPool) AbortTransaction(tid TransactionID) {
 // that the system will not crash while doing this, allowing us to avoid using a
 // WAL. You do not need to implement this for lab 1.
 func (bp *BufferPool) CommitTransaction(tid TransactionID) {
-	// TODO: some code goes here
+	bp.releasePageLock(tid, true)
 }
 
 func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
-	// TODO: some code goes here
+	list := make([]FetchedPageType, 0)
+	bp.tranFetchedPid[tid] = &list
 	return nil
 }
 
@@ -147,11 +186,13 @@ func (bp *BufferPool) changeCoord(file DBFile, pageId int, frameNo int) {
 // of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
 	bp.mu.Lock()
+	defer bp.mu.Unlock()
 
 	// try fetching lock from lock manager
+	key := file.pageKey(pageNo)
 	fetchLockOk := false
 	for !fetchLockOk {
-		fetchLockOk = bp.mgr.AcquireLock(tid, pageNo, perm)
+		fetchLockOk = bp.mgr.AcquireLock(tid, key, perm)
 		if fetchLockOk {
 			// ok
 			break
@@ -163,9 +204,9 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		bp.mu.Lock()
 	}
 
-	// get page lock successful
-	// defer unlock
-	defer bp.mu.Unlock()
+	// get page lock successfully
+	currTidPageFetchedList := bp.tranFetchedPid[tid]
+	*currTidPageFetchedList = append(*currTidPageFetchedList, FetchedPageType{pageNo, perm, file})
 
 	fid, ok := bp.coord[file.pageKey(pageNo)]
 	// not only pid , but also file is same
@@ -173,10 +214,10 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		return &bp.pages[fid], nil
 	}
 
-	if bp.free_list.Len() > 0 {
-		backElement := bp.free_list.Back()
+	if bp.freeList.Len() > 0 {
+		backElement := bp.freeList.Back()
 		fid = backElement.Value.(int)
-		bp.free_list.Remove(backElement)
+		bp.freeList.Remove(backElement)
 
 		bp.changeCoord(file, pageNo, fid)
 		bp.replacer.touch(fid)
@@ -220,16 +261,39 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 
 // New a page
 func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+
+	// try fetching lock from lock manager
+	fetchLockOk := false
+	key := file.pageKey(pageNo)
+	for !fetchLockOk {
+		fetchLockOk = bp.mgr.AcquireLock(tid, key, perm)
+		if fetchLockOk {
+			// ok
+			break
+		}
+		// otherwise
+		// block current thread
+		bp.mu.Unlock()
+		time.Sleep(100) // sleep for 100 ms
+		bp.mu.Lock()
+	}
+
+	// get page successfully
+	currTidPageFetchedList := bp.tranFetchedPid[tid]
+	*currTidPageFetchedList = append(*currTidPageFetchedList, FetchedPageType{pageNo, perm, file})
+
 	fid, ok := bp.coord[file.pageKey(pageNo)]
 	// not only pid , but also file is same
 	if ok && (*bp.pages[fid].getFile()) == file {
 		return &bp.pages[fid], nil
 	}
 
-	if bp.free_list.Len() > 0 {
-		backElement := bp.free_list.Back()
+	if bp.freeList.Len() > 0 {
+		backElement := bp.freeList.Back()
 		fid = backElement.Value.(int)
-		bp.free_list.Remove(backElement)
+		bp.freeList.Remove(backElement)
 
 		pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
 
