@@ -15,13 +15,38 @@ func NewLockManager() *LockManager {
 	return &LockManager{make(map[any]ReqLockType)}
 }
 
-// 注意update锁
+// handle updating lock and reacquiring lock
+func (mgr *LockManager) handleReacquireLock(tid TransactionID, pageKey any, tidsLen int, oldPerm RWPerm, newPerm RWPerm) bool {
+	if oldPerm == ReadPerm && newPerm == WritePerm {
+		// update logic lock
+		if tidsLen > 1 {
+			return false
+		}
+		newReq := ReqLockType{}
+		newReq.Perm = WritePerm
+		newReq.Tid = append(newReq.Tid, tid)
+		delete(mgr.reqMap, pageKey)
+		mgr.reqMap[pageKey] = newReq
+		return true
+	} else {
+		return true
+	}
+}
+
 func (mgr *LockManager) AcquireLock(tid TransactionID, pageKey any, perm RWPerm) bool {
 	req, ok := mgr.reqMap[pageKey]
 	if !ok || req.Perm == ReadPerm && perm == ReadPerm {
 		if !ok {
 			req = ReqLockType{}
 			req.Perm = perm
+		}
+		if ok {
+			tidsLen := len(req.Tid)
+			for _, reqTid := range req.Tid {
+				if reqTid == tid {
+					return mgr.handleReacquireLock(tid, pageKey, tidsLen, req.Perm, perm)
+				}
+			}
 		}
 		req.Tid = append(req.Tid, tid)
 		if req.Perm == ReadPerm {
