@@ -35,19 +35,21 @@ func (mgr *LockManager) handleReacquireLock(tid TransactionID, pageKey any, tids
 
 func (mgr *LockManager) AcquireLock(tid TransactionID, pageKey any, perm RWPerm) bool {
 	req, ok := mgr.reqMap[pageKey]
-	if !ok || req.Perm == ReadPerm && perm == ReadPerm {
-		if !ok {
-			req = ReqLockType{}
-			req.Perm = perm
-		}
-		if ok {
-			tidsLen := len(req.Tid)
-			for _, reqTid := range req.Tid {
-				if reqTid == tid {
-					return mgr.handleReacquireLock(tid, pageKey, tidsLen, req.Perm, perm)
-				}
+	if !ok {
+		req = ReqLockType{}
+		req.Perm = perm
+	}
+	if ok {
+		tidsLen := len(req.Tid)
+		for _, reqTid := range req.Tid {
+			if reqTid == tid {
+				return mgr.handleReacquireLock(tid, pageKey, tidsLen, req.Perm, perm)
 			}
 		}
+	}
+	// not same tid
+	permOk := req.Perm == perm && perm == ReadPerm
+	if !ok || permOk {
 		req.Tid = append(req.Tid, tid)
 		if req.Perm == ReadPerm {
 			req.RdCnt++
