@@ -21,8 +21,12 @@ func TestCommitRight(t *testing.T) {
 		panic("err should not exist")
 	}
 	tuple, err = iter()
+	if tuple == nil {
+		panic("there should be more tuple")
+	}
+	tuple, err = iter()
 	if tuple != nil {
-		panic("there should be no tuple anymore")
+		panic("no more tuple")
 	}
 }
 
@@ -47,7 +51,7 @@ func TestLockingDataStruct(t *testing.T) {
 	cnt := 0
 	for {
 		tuple, err := iter()
-		if tuple == nil && err != nil {
+		if tuple == nil && err == nil {
 			break
 		}
 		if err != nil {

@@ -51,8 +51,6 @@ func (fr *FifoReplacer) evict() (int, error) {
 	}
 	e := fr.data.Front()
 	fr.data.Remove(e)
-	// for lab1
-	fr.data.PushBack(e.Value.(int))
 	return e.Value.(int), nil
 }
 
@@ -67,6 +65,8 @@ type BufferPool struct {
 	// pageid to frameid
 	coord map[any]int
 
+	pin map[any]int
+
 	freeList list.List
 	// replacer
 	replacer Replacer
@@ -78,6 +78,32 @@ type BufferPool struct {
 	tranFetchedPid map[TransactionID]*[]FetchedPageType
 }
 
+func (bp *BufferPool) Pin(key any) {
+	cnt, ok := bp.pin[key]
+	if ok {
+		bp.pin[key] = cnt + 1
+	} else {
+		bp.pin[key] = 1
+	}
+}
+
+func (bp *BufferPool) Unpin(key any) {
+	cnt, ok := bp.pin[key]
+	if ok && cnt > 0 {
+		bp.pin[key] = cnt - 1
+		if cnt-1 == 0 {
+			// add into replacer
+			fid, ok := bp.coord[key]
+			if !ok {
+				panic("fid shouldn't be nil")
+			}
+			bp.replacer.touch(fid)
+		}
+	} else {
+		panic("incorrect calling")
+	}
+}
+
 // Create a new BufferPool with the specified number of pages
 func NewBufferPool(numPages int) *BufferPool {
 	var bp = BufferPool{}
@@ -85,14 +111,13 @@ func NewBufferPool(numPages int) *BufferPool {
 	bp.pages = make([]Page, numPages)
 	bp.coord = make(map[any]int)
 	bp.replacer = NewFifoReplacer(numPages)
-
 	bp.mgr = NewLockManager()
+	bp.pin = make(map[any]int)
 
 	bp.tranFetchedPid = make(map[TransactionID]*[]FetchedPageType)
 
 	for i := 0; i < numPages; i++ {
 		bp.freeList.PushBack(i)
-		bp.replacer.touch(i)
 	}
 
 	return &bp
@@ -229,7 +254,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		time.Sleep(100) // sleep for 100 ms
 		bp.mu.Lock()
 	}
-
+	bp.Pin(key)
 	// get page lock successfully
 	currTidPageFetchedList, ok := bp.tranFetchedPid[tid]
 	if ok {
@@ -308,7 +333,7 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 		time.Sleep(100) // sleep for 100 ms
 		bp.mu.Lock()
 	}
-
+	bp.Pin(key)
 	// get page successfully
 	currTidPageFetchedList := bp.tranFetchedPid[tid]
 	*currTidPageFetchedList = append(*currTidPageFetchedList, FetchedPageType{pageNo, perm, file})

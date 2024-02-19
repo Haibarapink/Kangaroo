@@ -48,6 +48,11 @@ type Page interface {
 	getFile() *DBFile
 }
 
+func PageKey(p Page, pageNo int) any {
+	file := p.getFile()
+	return (*file).pageKey(pageNo)
+}
+
 type DBFile interface {
 	insertTuple(t *Tuple, tid TransactionID) error
 	deleteTuple(t *Tuple, tid TransactionID) error

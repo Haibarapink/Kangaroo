@@ -178,6 +178,8 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 			return err
 		}
 
+		key := PageKey(*pg, i)
+
 		var hp = (*pg).(*heapPage)
 
 		if hp.numUsedSlots < hp.numSlots {
@@ -187,8 +189,11 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 			}
 			t.Rid = rid
 			(*pg).setDirty(true)
+
+			bp.Unpin(key)
 			return nil
 		}
+		bp.Unpin(key)
 		i++
 	}
 
@@ -206,6 +211,8 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	t.Rid = rid
 	hp.setDirty(true)
 	f.flushPage(newPage)
+
+	bp.Unpin(PageKey(*newPage, maxPageNo))
 
 	return nil
 }
@@ -230,7 +237,7 @@ func (f *HeapFile) deleteTuple(t *Tuple, tid TransactionID) error {
 	var hp = (*pg).(*heapPage)
 	hp.deleteTuple(rid)
 	(*pg).setDirty(true)
-
+	bp.Unpin(PageKey(*pg, pageNo))
 	return nil
 }
 
@@ -295,10 +302,13 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 			return nil, err
 		}
 		if tuple == nil {
+			key := PageKey(*pg, pageNo)
 			pageNo++
 			if pageNo >= f.NumPages() {
+				bp.Unpin(key)
 				return nil, nil
 			}
+			bp.Unpin(key)
 			pg, err = bp.GetPage(f, pageNo, tid, ReadPerm)
 			if err != nil {
 				return nil, err
@@ -312,7 +322,6 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 
 			// defending codes
 			if pageNo+1 < f.NumPages() {
-				// which means that there is a next page, so current page should be full
 				if hp.numUsedSlots < hp.numSlots {
 					panic("page not full , which should not happen")
 				}
@@ -326,6 +335,7 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 
 			// maybe no tuple in this page
 			if tuple == nil {
+				bp.Unpin(key)
 				return nil, nil
 			}
 		}
