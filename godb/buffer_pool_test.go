@@ -4,6 +4,39 @@ import (
 	"testing"
 )
 
+func toHeapPage(p Page) *heapPage {
+	return p.(*heapPage)
+}
+
+// my test
+func TestEvcit(t *testing.T) {
+	_, t1, _, hf, bp, tid := makeTestVars()
+	for hf.NumPages() != 10 {
+		hf.insertTuple(&t1, tid)
+	}
+	pg1, _ := bp.GetPage(hf, 0, tid, WritePerm)
+	pg2, _ := bp.GetPage(hf, 1, tid, WritePerm)
+	pg3, _ := bp.GetPage(hf, 2, tid, WritePerm)
+	hp1 := toHeapPage(*pg1)
+	hp2 := toHeapPage(*pg2)
+	hp3 := toHeapPage(*pg3)
+
+	hp1.setDirty(true)
+	hp2.setDirty(true)
+	hp3.setDirty(true)
+
+	_, err := bp.GetPage(hf, 3, tid, ReadPerm)
+	if err == nil {
+		t.Errorf("can't get any page")
+	}
+
+	bp.Unpin(PageKey(*pg1, 0))
+	pg4, err := bp.GetPage(hf, 3, tid, ReadPerm)
+	if err != nil || pg4 == nil {
+		t.Errorf("should get page 3")
+	}
+}
+
 // my test
 func TestCommitRight(t *testing.T) {
 	_, _, t2, hf, bp, _ := makeTestVars()
@@ -77,19 +110,19 @@ func TestGetPage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
-		// hack to force dirty pages to disk
-		// because CommitTransaction may not be implemented
-		// yet if this is called in lab 1 or 2
-		for i := 0; i < hf.NumPages(); i++ {
-			pg, err := bp.GetPage(hf, i, tid, ReadPerm)
-			if pg == nil || err != nil {
-				t.Fatal("page nil or error", err)
-			}
-			if (*pg).isDirty() {
-				(*(*pg).getFile()).flushPage(pg)
-				(*pg).setDirty(false)
-			}
-		}
+		//// hack to force dirty pages to disk
+		//// because CommitTransaction may not be implemented
+		//// yet if this is called in lab 1 or 2
+		//for i := 0; i < hf.NumPages(); i++ {
+		//	pg, err := bp.GetPage(hf, i, tid, ReadPerm)
+		//	if pg == nil || err != nil {
+		//		t.Fatal("page nil or error", err)
+		//	}
+		//	if (*pg).isDirty() {
+		//		(*(*pg).getFile()).flushPage(pg)
+		//		(*pg).setDirty(false)
+		//	}
+		//}
 		// commit transaction
 		bp.CommitTransaction(tid)
 	}
@@ -100,6 +133,7 @@ func TestGetPage(t *testing.T) {
 		if pg == nil || err != nil {
 			t.Fatalf("failed to get page %d (err = %v)", i, err)
 		}
+		bp.Unpin(PageKey(*pg, i))
 	}
 	_, err := bp.GetPage(hf, 7, tid, ReadPerm)
 	if err == nil {

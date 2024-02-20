@@ -193,6 +193,7 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 			bp.Unpin(key)
 			return nil
 		}
+		bp.releaseLockOf(tid, hp.pageId, hp.file)
 		bp.Unpin(key)
 		i++
 	}

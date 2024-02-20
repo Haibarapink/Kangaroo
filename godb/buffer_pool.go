@@ -2,6 +2,7 @@ package godb
 
 import (
 	"container/list"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -146,16 +147,19 @@ func (bp *BufferPool) releasePageLock(tid TransactionID, forceWrite bool) {
 	if !ok {
 		return
 	}
-	for _, val := range *pidList {
+	for idx, val := range *pidList {
 		file := val.File
 		pid := val.Pid
 		perm := val.Perm
 		key := file.pageKey(pid)
+
 		if perm == WritePerm && forceWrite {
 			// fetch page first
 			fid, ok := bp.coord[key]
 			if !ok {
+				fmt.Printf("Current idx %d", idx)
 				panic("fid doesn't exist")
+				continue
 			}
 			page := bp.pages[fid]
 			err := file.flushPage(&page)
@@ -222,6 +226,21 @@ func (bp *BufferPool) changeCoord(file DBFile, pageId int, frameNo int) {
 	}
 
 	bp.coord[file.pageKey(pageId)] = frameNo
+}
+
+// This function should be called when heapFile look for the page which is selected to insert/remove a tuple
+func (bp *BufferPool) releaseLockOf(tid TransactionID, pid int, file DBFile) {
+	// clean up the tran
+	reqList := bp.tranFetchedPid[tid]
+	for idx, val := range *reqList {
+		if val.Pid == pid && val.File == file {
+			*reqList = append((*reqList)[:idx], (*reqList)[idx+1:]...)
+			break
+		}
+	}
+
+	// remove from lock
+	bp.mgr.ReleaseLock(tid, file.pageKey(pid))
 }
 
 // Retrieve the specified page from the specified DBFile (e.g., a HeapFile), on
