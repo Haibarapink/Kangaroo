@@ -159,7 +159,6 @@ func (bp *BufferPool) releasePageLock(tid TransactionID, forceWrite bool) {
 			if !ok {
 				fmt.Printf("Current idx %d", idx)
 				panic("fid doesn't exist")
-				continue
 			}
 			page := bp.pages[fid]
 			err := file.flushPage(&page)
@@ -189,8 +188,14 @@ func (bp *BufferPool) AbortTransaction(tid TransactionID) {
 			panic("fid should exist")
 		}
 		page, err := file.readPage(pid)
+		hf := file.(*HeapFile)
 		if err != nil {
-			panic("reading page shouldn't fail")
+			if pid < (*hf).NumPages() {
+				panic("reading page shouldn't fail")
+			} else {
+				// this is new page
+				page = hf.AllocPage(pid)
+			}
 		}
 		bp.pages[fid] = *page
 	}

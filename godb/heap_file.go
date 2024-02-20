@@ -154,6 +154,13 @@ func (f *HeapFile) readPage(pageNo int) (*Page, error) {
 	return &p, nil
 }
 
+// AllocPage Allocate an empty page
+func (f *HeapFile) AllocPage(pageNo int) *Page {
+	var page = newHeapPage(f.desc, pageNo, f)
+	var p Page = page
+	return &p
+}
+
 // Add the tuple to the HeapFile.  This method should search through pages in
 // the heap file, looking for empty slots and adding the tuple in the first
 // empty slot if finds.
@@ -211,10 +218,7 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	}
 	t.Rid = rid
 	hp.setDirty(true)
-	f.flushPage(newPage)
-
 	bp.Unpin(PageKey(*newPage, maxPageNo))
-
 	return nil
 }
 
