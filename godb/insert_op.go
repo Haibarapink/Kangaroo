@@ -51,7 +51,12 @@ func (iop *InsertOp) Iterator(tid TransactionID) (func() (*Tuple, error), error)
 		count++
 	}
 
+	called := false
 	return func() (*Tuple, error) {
+		if called == true {
+			return nil, nil
+		}
+		called = true
 		var res Tuple
 		res.Desc = *desc
 		res.Fields = append(res.Fields, IntField{int64(count)})

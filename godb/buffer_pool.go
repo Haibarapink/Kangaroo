@@ -66,8 +66,6 @@ type BufferPool struct {
 	// pageid to frameid
 	coord map[any]int
 
-	pin map[any]int
-
 	freeList list.List
 	// replacer
 	replacer Replacer
@@ -79,32 +77,6 @@ type BufferPool struct {
 	tranFetchedPid map[TransactionID]*[]FetchedPageType
 }
 
-func (bp *BufferPool) Pin(key any) {
-	cnt, ok := bp.pin[key]
-	if ok {
-		bp.pin[key] = cnt + 1
-	} else {
-		bp.pin[key] = 1
-	}
-}
-
-func (bp *BufferPool) Unpin(key any) {
-	cnt, ok := bp.pin[key]
-	if ok && cnt > 0 {
-		bp.pin[key] = cnt - 1
-		if cnt-1 == 0 {
-			// add into replacer
-			fid, ok := bp.coord[key]
-			if !ok {
-				panic("fid shouldn't be nil")
-			}
-			bp.replacer.touch(fid)
-		}
-	} else {
-		panic("incorrect calling")
-	}
-}
-
 // Create a new BufferPool with the specified number of pages
 func NewBufferPool(numPages int) *BufferPool {
 	var bp = BufferPool{}
@@ -113,7 +85,6 @@ func NewBufferPool(numPages int) *BufferPool {
 	bp.coord = make(map[any]int)
 	bp.replacer = NewFifoReplacer(numPages)
 	bp.mgr = NewLockManager()
-	bp.pin = make(map[any]int)
 
 	bp.tranFetchedPid = make(map[TransactionID]*[]FetchedPageType)
 
@@ -219,7 +190,7 @@ func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
 	return nil
 }
 
-func (bp *BufferPool) changeCoord(file DBFile, pageId int, frameNo int) {
+func (bp *BufferPool) changeCorrespond(file DBFile, pageId int, frameNo int) {
 	// old
 	oldPage := bp.pages[frameNo]
 	// defending codes
@@ -231,21 +202,6 @@ func (bp *BufferPool) changeCoord(file DBFile, pageId int, frameNo int) {
 	}
 
 	bp.coord[file.pageKey(pageId)] = frameNo
-}
-
-// This function should be called when heapFile look for the page which is selected to insert/remove a tuple
-func (bp *BufferPool) releaseLockOf(tid TransactionID, pid int, file DBFile) {
-	// clean up the tran
-	reqList := bp.tranFetchedPid[tid]
-	for idx, val := range *reqList {
-		if val.Pid == pid && val.File == file {
-			*reqList = append((*reqList)[:idx], (*reqList)[idx+1:]...)
-			break
-		}
-	}
-
-	// remove from lock
-	bp.mgr.ReleaseLock(tid, file.pageKey(pid))
 }
 
 // Retrieve the specified page from the specified DBFile (e.g., a HeapFile), on
@@ -278,7 +234,6 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		time.Sleep(100) // sleep for 100 ms
 		bp.mu.Lock()
 	}
-	bp.Pin(key)
 	// get page lock successfully
 	currTidPageFetchedList, ok := bp.tranFetchedPid[tid]
 	if ok {
@@ -288,7 +243,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 
 	fid, ok := bp.coord[file.pageKey(pageNo)]
 	// not only pid , but also file is same
-	if ok && (*bp.pages[fid].getFile()) == file {
+	if ok {
 		return &bp.pages[fid], nil
 	}
 
@@ -297,7 +252,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		fid = backElement.Value.(int)
 		bp.freeList.Remove(backElement)
 
-		bp.changeCoord(file, pageNo, fid)
+		bp.changeCorrespond(file, pageNo, fid)
 		bp.replacer.touch(fid)
 
 		pg, err := file.readPage(pageNo)
@@ -325,7 +280,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		}
 	}
 	// must be the first step
-	bp.changeCoord(file, pageNo, fid)
+	bp.changeCorrespond(file, pageNo, fid)
 
 	pg, err := file.readPage(pageNo)
 	if err != nil {
@@ -357,11 +312,11 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 		time.Sleep(100) // sleep for 100 ms
 		bp.mu.Lock()
 	}
-	bp.Pin(key)
 	// get page successfully
 	currTidPageFetchedList := bp.tranFetchedPid[tid]
-	*currTidPageFetchedList = append(*currTidPageFetchedList, FetchedPageType{pageNo, perm, file})
-
+	if currTidPageFetchedList != nil {
+		*currTidPageFetchedList = append(*currTidPageFetchedList, FetchedPageType{pageNo, perm, file})
+	}
 	fid, ok := bp.coord[file.pageKey(pageNo)]
 	// not only pid , but also file is same
 	if ok && (*bp.pages[fid].getFile()) == file {
@@ -376,7 +331,7 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 		pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
 
 		bp.pages[fid] = pg
-		bp.changeCoord(file, pageNo, fid)
+		bp.changeCorrespond(file, pageNo, fid)
 		return &bp.pages[fid], nil
 	}
 
@@ -396,7 +351,7 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 	}
 
 	// must be first
-	bp.changeCoord(file, pageNo, fid)
+	bp.changeCorrespond(file, pageNo, fid)
 
 	pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
 	if err != nil {

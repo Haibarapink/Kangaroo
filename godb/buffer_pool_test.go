@@ -30,7 +30,6 @@ func TestEvcit(t *testing.T) {
 		t.Errorf("can't get any page")
 	}
 
-	bp.Unpin(PageKey(*pg1, 0))
 	pg4, err := bp.GetPage(hf, 3, tid, ReadPerm)
 	if err != nil || pg4 == nil {
 		t.Errorf("should get page 3")
@@ -133,7 +132,6 @@ func TestGetPage(t *testing.T) {
 		if pg == nil || err != nil {
 			t.Fatalf("failed to get page %d (err = %v)", i, err)
 		}
-		bp.Unpin(PageKey(*pg, i))
 	}
 	_, err := bp.GetPage(hf, 7, tid, ReadPerm)
 	if err == nil {

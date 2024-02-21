@@ -93,6 +93,8 @@ func newHeapPage(desc *TupleDesc, pageNo int, f *HeapFile) *heapPage {
 			return nil
 		}
 		res.initFromBuffer(&buf)
+	} else {
+		f.file.Truncate(int64((pageNo + 1) * PageSize))
 	}
 
 	return res
@@ -138,7 +140,7 @@ func (h *heapPage) insertTuple(t *Tuple) (recordID, error) {
 	rid.PageNo = h.pageId
 	rid.SlotNo = h.numUsedSlots
 	h.numUsedSlots++
-
+	t.Desc = *h.desc
 	h.tuples = append(h.tuples, *t)
 	h.deleted = append(h.deleted, false)
 	return rid, nil

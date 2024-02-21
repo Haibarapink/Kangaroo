@@ -185,8 +185,6 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 			return err
 		}
 
-		key := PageKey(*pg, i)
-
 		var hp = (*pg).(*heapPage)
 
 		if hp.numUsedSlots < hp.numSlots {
@@ -197,11 +195,8 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 			t.Rid = rid
 			(*pg).setDirty(true)
 
-			bp.Unpin(key)
 			return nil
 		}
-		bp.releaseLockOf(tid, hp.pageId, hp.file)
-		bp.Unpin(key)
 		i++
 	}
 
@@ -218,7 +213,6 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 	}
 	t.Rid = rid
 	hp.setDirty(true)
-	bp.Unpin(PageKey(*newPage, maxPageNo))
 	return nil
 }
 
@@ -242,7 +236,6 @@ func (f *HeapFile) deleteTuple(t *Tuple, tid TransactionID) error {
 	var hp = (*pg).(*heapPage)
 	hp.deleteTuple(rid)
 	(*pg).setDirty(true)
-	bp.Unpin(PageKey(*pg, pageNo))
 	return nil
 }
 
@@ -290,7 +283,13 @@ func (f *HeapFile) Descriptor() *TupleDesc {
 func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 	var pageNo = 0
 	var bp = f.bufPool
-	var pg, err = bp.GetPage(f, pageNo, tid, ReadPerm)
+	var pg *Page
+	var err error
+	if f.NumPages() == 0 {
+		pg, err = bp.NewPage(f, pageNo, tid, ReadPerm)
+	} else {
+		pg, err = bp.GetPage(f, pageNo, tid, ReadPerm)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -307,13 +306,10 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 			return nil, err
 		}
 		if tuple == nil {
-			key := PageKey(*pg, pageNo)
 			pageNo++
 			if pageNo >= f.NumPages() {
-				bp.Unpin(key)
 				return nil, nil
 			}
-			bp.Unpin(key)
 			pg, err = bp.GetPage(f, pageNo, tid, ReadPerm)
 			if err != nil {
 				return nil, err
@@ -340,7 +336,6 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 
 			// maybe no tuple in this page
 			if tuple == nil {
-				bp.Unpin(key)
 				return nil, nil
 			}
 		}

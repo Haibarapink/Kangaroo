@@ -49,7 +49,13 @@ func (dop *DeleteOp) Iterator(tid TransactionID) (func() (*Tuple, error), error)
 		deletedCount++
 	}
 
+	called := false
+
 	return func() (*Tuple, error) {
+		if called == true {
+			return nil, nil
+		}
+		called = true
 		desc := dop.Descriptor()
 		var t Tuple = Tuple{*desc, []DBValue{IntField{int64(deletedCount)}}, nil}
 		return &t, nil
