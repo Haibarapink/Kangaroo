@@ -1,5 +1,7 @@
 package godb
 
+import "fmt"
+
 type ReqLockType struct {
 	Tid   []TransactionID
 	Perm  RWPerm
@@ -17,6 +19,7 @@ func NewLockManager() *LockManager {
 
 // handle updating lock and reacquiring lock
 func (mgr *LockManager) handleReacquireLock(tid TransactionID, pageKey any, tidsLen int, oldPerm RWPerm, newPerm RWPerm) bool {
+
 	if oldPerm == ReadPerm && newPerm == WritePerm {
 		// update logic lock
 		if tidsLen > 1 {
@@ -42,11 +45,20 @@ func (mgr *LockManager) AcquireLock(tid TransactionID, pageKey any, perm RWPerm)
 	if ok {
 		tidsLen := len(req.Tid)
 		for _, reqTid := range req.Tid {
-			if reqTid == tid {
-				return mgr.handleReacquireLock(tid, pageKey, tidsLen, req.Perm, perm)
+			ok := false
+			if *reqTid == *tid {
+				ok = mgr.handleReacquireLock(tid, pageKey, tidsLen, req.Perm, perm)
 			}
+			fmt.Println(*reqTid, " ", *tid, " hold ", pageKey, " ", ok)
+			return ok
 		}
 	}
+	fmt.Print("holder list : [")
+	for _, i := range req.Tid {
+		fmt.Print(*i)
+	}
+	fmt.Println("]")
+
 	// not same tid
 	permOk := req.Perm == perm && perm == ReadPerm
 	if !ok || permOk {
@@ -76,7 +88,8 @@ func (mgr *LockManager) ReleaseLock(tid TransactionID, pageKey any) {
 	}
 
 	if !ok {
-		panic("ReleaseLock fail because tid not existing")
+		//panic("ReleaseLock fail because tid not existing")
+		return
 	}
 
 	delete(mgr.reqMap, pageKey)

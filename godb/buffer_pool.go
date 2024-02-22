@@ -118,26 +118,26 @@ func (bp *BufferPool) releasePageLock(tid TransactionID, forceWrite bool) {
 	if !ok {
 		return
 	}
-	for idx, val := range *pidList {
+	for _, val := range *pidList {
 		file := val.File
 		pid := val.Pid
 		perm := val.Perm
 		key := file.pageKey(pid)
-
+		fid, ok := bp.coord[key]
+		if !ok {
+			continue
+		}
 		if perm == WritePerm && forceWrite {
 			// fetch page first
-			fid, ok := bp.coord[key]
-			if !ok {
-				fmt.Printf("Current idx %d", idx)
-				panic("fid doesn't exist")
-			}
 			page := bp.pages[fid]
 			err := file.flushPage(&page)
 			if err != nil {
 				panic("should not fail(assumed by lab document")
 			}
+			page.setDirty(false)
 		}
 		bp.mgr.ReleaseLock(tid, key)
+		bp.replacer.touch(fid)
 	}
 
 }
@@ -146,6 +146,8 @@ func (bp *BufferPool) releasePageLock(tid TransactionID, forceWrite bool) {
 // of the pages tid has dirtired will be on disk so it is sufficient to just
 // release locks to abort. You do not need to implement this for lab 1.
 func (bp *BufferPool) AbortTransaction(tid TransactionID) {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
 	bp.releasePageLock(tid, false)
 
 	// reread dirty page
@@ -168,6 +170,7 @@ func (bp *BufferPool) AbortTransaction(tid TransactionID) {
 				page = hf.AllocPage(pid)
 			}
 		}
+		bp.replacer.touch(fid)
 		bp.pages[fid] = *page
 	}
 
@@ -180,11 +183,15 @@ func (bp *BufferPool) AbortTransaction(tid TransactionID) {
 // that the system will not crash while doing this, allowing us to avoid using a
 // WAL. You do not need to implement this for lab 1.
 func (bp *BufferPool) CommitTransaction(tid TransactionID) {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
 	bp.releasePageLock(tid, true)
 	delete(bp.tranFetchedPid, tid)
 }
 
 func (bp *BufferPool) BeginTransaction(tid TransactionID) error {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
 	list := make([]FetchedPageType, 0)
 	bp.tranFetchedPid[tid] = &list
 	return nil
@@ -222,7 +229,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 	// try fetching lock from lock manager
 	key := file.pageKey(pageNo)
 	fetchLockOk := false
-	for !fetchLockOk {
+	for fetchLockOk == false {
 		fetchLockOk = bp.mgr.AcquireLock(tid, key, perm)
 		if fetchLockOk {
 			// ok
@@ -230,6 +237,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		}
 		// otherwise
 		// block current thread
+		fmt.Println("stuck ", *tid, " ", pageNo)
 		bp.mu.Unlock()
 		time.Sleep(100) // sleep for 100 ms
 		bp.mu.Lock()
@@ -272,12 +280,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 	}
 
 	if bp.pages[fid].isDirty() {
-		// flush to disk
-		pgFile := *bp.pages[fid].getFile()
-		err := pgFile.flushPage(&bp.pages[fid])
-		if err != nil {
-			return nil, err
-		}
+		panic("no steal")
 	}
 	// must be the first step
 	bp.changeCorrespond(file, pageNo, fid)
@@ -308,6 +311,7 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 		}
 		// otherwise
 		// block current thread
+		fmt.Println("fuck!")
 		bp.mu.Unlock()
 		time.Sleep(100) // sleep for 100 ms
 		bp.mu.Lock()
@@ -342,12 +346,7 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 	}
 
 	if bp.pages[fid].isDirty() {
-		// flush to disk
-		pgFile := *bp.pages[fid].getFile()
-		err := pgFile.flushPage(&bp.pages[fid])
-		if err != nil {
-			return nil, err
-		}
+		panic("no steal")
 	}
 
 	// must be first
