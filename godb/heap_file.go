@@ -41,7 +41,6 @@ func NewHeapFile(fromFile string, td *TupleDesc, bp *BufferPool) (*HeapFile, err
 	var err error
 	heapFile.file, err = os.OpenFile(fromFile, os.O_RDWR|os.O_CREATE, 0666)
 
-	// tmp test
 	heapFile.insertCnt = 0
 	if err != nil {
 		return nil, err
@@ -115,17 +114,17 @@ func (f *HeapFile) LoadFromCSV(file *os.File, hasHeader bool, sep string, skipLa
 		// hack to force dirty pages to disk
 		// because CommitTransaction may not be implemented
 		// yet if this is called in lab 1 or 2
-		for j := 0; j < f.NumPages(); j++ {
-			pg, err := bp.GetPage(f, j, tid, ReadPerm)
-			if pg == nil || err != nil {
-				fmt.Println("page nil or error", err)
-				break
-			}
-			if (*pg).isDirty() {
-				(*f).flushPage(pg)
-				(*pg).setDirty(false)
-			}
-		}
+		//for j := 0; j < f.NumPages(); j++ {
+		//	pg, err := bp.GetPage(f, j, tid, ReadPerm)
+		//	if pg == nil || err != nil {
+		//		fmt.Println("page nil or error", err)
+		//		break
+		//	}
+		//	if (*pg).isDirty() {
+		//		(*f).flushPage(pg)
+		//		(*pg).setDirty(false)
+		//	}
+		//}
 
 		//commit frequently, to avoid all pages in BP being full
 		//todo fix
@@ -194,9 +193,9 @@ func (f *HeapFile) insertTuple(t *Tuple, tid TransactionID) error {
 			}
 			t.Rid = rid
 			(*pg).setDirty(true)
-
 			return nil
 		}
+		bp.Unpin(PageKey(*pg))
 		i++
 	}
 
@@ -305,12 +304,15 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 		if err != nil {
 			return nil, err
 		}
+		key := PageKey(*pg)
 		if tuple == nil {
+			bp.Unpin(key) // unpin previous page
 			pageNo++
 			if pageNo >= f.NumPages() {
 				return nil, nil
 			}
 			pg, err = bp.GetPage(f, pageNo, tid, ReadPerm)
+			newKey := PageKey(*pg)
 			if err != nil {
 				return nil, err
 			}
@@ -336,6 +338,7 @@ func (f *HeapFile) Iterator(tid TransactionID) (func() (*Tuple, error), error) {
 
 			// maybe no tuple in this page
 			if tuple == nil {
+				bp.Unpin(newKey)
 				return nil, nil
 			}
 		}

@@ -2,7 +2,6 @@ package godb
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -64,17 +63,22 @@ type FetchedPageType struct {
 type BufferPool struct {
 	pages []Page
 	// pageid to frameid
-	coord map[any]int
+	corr map[any]int
 
 	freeList list.List
 	// replacer
 	replacer Replacer
+
+	// pin
+	pin map[any]int
 
 	// sync
 	mu  sync.Mutex
 	mgr *LockManager
 	// transaction
 	tranFetchedPid map[TransactionID]*[]FetchedPageType
+
+	g Graph
 }
 
 // Create a new BufferPool with the specified number of pages
@@ -82,21 +86,61 @@ func NewBufferPool(numPages int) *BufferPool {
 	var bp = BufferPool{}
 
 	bp.pages = make([]Page, numPages)
-	bp.coord = make(map[any]int)
+	bp.corr = make(map[any]int)
 	bp.replacer = NewFifoReplacer(numPages)
 	bp.mgr = NewLockManager()
+	bp.pin = make(map[any]int)
 
 	bp.tranFetchedPid = make(map[TransactionID]*[]FetchedPageType)
-
+	bp.g = NewGraph()
 	for i := 0; i < numPages; i++ {
 		bp.freeList.PushBack(i)
 	}
 
+	go func() {
+		for {
+			time.Sleep(1000)
+			res := bp.g.CheckCycle()
+			if res != nil {
+				//bp.g.Print()
+				bp.AbortTransaction(res)
+			}
+		}
+	}()
+
 	return &bp
 }
 
-// Testing method -- iterate through all pages in the buffer pool
-// and flush them using [DBFile.flushPage]. Does not need to be thread/transaction safe
+func (bp *BufferPool) Pin(pageKey any) {
+	cnt, ok := bp.pin[pageKey]
+	if !ok {
+		cnt = 0
+	}
+	cnt += 1
+	bp.pin[pageKey] = cnt
+}
+
+func (bp *BufferPool) Unpin(pageKey any) {
+	cnt, ok := bp.pin[pageKey]
+	if !ok || cnt == 0 {
+		return
+	}
+
+	cnt -= 1
+	if cnt == 0 {
+		// replacer touch it
+		fid, ok := bp.corr[pageKey]
+		if !ok {
+			return
+		}
+		if bp.pages[fid].isDirty() == false {
+			bp.replacer.touch(fid)
+		}
+	}
+	bp.pin[pageKey] = cnt
+	return
+}
+
 func (bp *BufferPool) FlushAllPages() {
 	for i := 0; i < len(bp.pages); i++ {
 		if bp.pages[i] != nil && bp.pages[i].isDirty() {
@@ -118,26 +162,32 @@ func (bp *BufferPool) releasePageLock(tid TransactionID, forceWrite bool) {
 	if !ok {
 		return
 	}
+	bp.g.RemoveVex(tid)
 	for _, val := range *pidList {
 		file := val.File
 		pid := val.Pid
 		perm := val.Perm
 		key := file.pageKey(pid)
-		fid, ok := bp.coord[key]
+		fid, ok := bp.corr[key]
 		if !ok {
 			continue
 		}
-		if perm == WritePerm && forceWrite {
-			// fetch page first
-			page := bp.pages[fid]
-			err := file.flushPage(&page)
-			if err != nil {
-				panic("should not fail(assumed by lab document")
+		if perm == WritePerm {
+			if forceWrite {
+				// fetch page first
+				page := bp.pages[fid]
+				if page.isDirty() {
+					err := file.flushPage(&page)
+					if err != nil {
+						panic("should not fail(assumed by lab document")
+					}
+				}
+				page.setDirty(false)
 			}
-			page.setDirty(false)
+			bp.replacer.touch(fid)
 		}
 		bp.mgr.ReleaseLock(tid, key)
-		bp.replacer.touch(fid)
+		bp.Unpin(key)
 	}
 
 }
@@ -148,6 +198,7 @@ func (bp *BufferPool) releasePageLock(tid TransactionID, forceWrite bool) {
 func (bp *BufferPool) AbortTransaction(tid TransactionID) {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
+
 	bp.releasePageLock(tid, false)
 
 	// reread dirty page
@@ -156,7 +207,7 @@ func (bp *BufferPool) AbortTransaction(tid TransactionID) {
 		pid := val.Pid
 		file := val.File
 		key := file.pageKey(pid)
-		fid, ok := bp.coord[key]
+		fid, ok := bp.corr[key]
 		if !ok {
 			panic("fid should exist")
 		}
@@ -205,23 +256,12 @@ func (bp *BufferPool) changeCorrespond(file DBFile, pageId int, frameNo int) {
 		// old page id
 		oldPageId := oldPage.(*heapPage).pageId
 		// delete old
-		delete(bp.coord, (*oldPage.getFile()).pageKey(oldPageId))
+		delete(bp.corr, (*oldPage.getFile()).pageKey(oldPageId))
 	}
 
-	bp.coord[file.pageKey(pageId)] = frameNo
+	bp.corr[file.pageKey(pageId)] = frameNo
 }
 
-// Retrieve the specified page from the specified DBFile (e.g., a HeapFile), on
-// behalf of the specified transaction. If a page is not cached in the buffer pool,
-// you can read it from disk uing [DBFile.readPage]. If the buffer pool is full (i.e.,
-// already stores numPages pages), a page should be evicted.  Should not evict
-// pages that are dirty, as this would violate NO STEAL. If the buffer pool is
-// full of dirty pages, you should return an error. For lab 1, you do not need to
-// implement locking or deadlock detection. [For future labs, before returning the page,
-// attempt to lock it with the specified permission. If the lock is
-// unavailable, should block until the lock is free. If a deadlock occurs, abort
-// one of the transactions in the deadlock]. You will likely want to store a list
-// of pages in the BufferPool in a map keyed by the [DBFile.pageKey].
 func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm RWPerm) (*Page, error) {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
@@ -230,18 +270,25 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 	key := file.pageKey(pageNo)
 	fetchLockOk := false
 	for fetchLockOk == false {
-		fetchLockOk = bp.mgr.AcquireLock(tid, key, perm)
+		ch, fetchLockOk := bp.mgr.AcquireLock(tid, key, perm)
 		if fetchLockOk {
 			// ok
+			//fmt.Println(*tid, " sc ", perm)
 			break
 		}
+
+		for _, to := range bp.mgr.reqMap[key].Tid {
+			bp.g.AddEdge(tid, to)
+		}
+
 		// otherwise
 		// block current thread
-		fmt.Println("stuck ", *tid, " ", pageNo)
+		//fmt.Println(*tid, " fa ", perm)
 		bp.mu.Unlock()
-		time.Sleep(100) // sleep for 100 ms
+		<-*ch
 		bp.mu.Lock()
 	}
+	bp.Pin(key)
 	// get page lock successfully
 	currTidPageFetchedList, ok := bp.tranFetchedPid[tid]
 	if ok {
@@ -249,7 +296,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		*currTidPageFetchedList = append(*currTidPageFetchedList, FetchedPageType{pageNo, perm, file})
 	}
 
-	fid, ok := bp.coord[file.pageKey(pageNo)]
+	fid, ok := bp.corr[file.pageKey(pageNo)]
 	// not only pid , but also file is same
 	if ok {
 		return &bp.pages[fid], nil
@@ -261,10 +308,10 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 		bp.freeList.Remove(backElement)
 
 		bp.changeCorrespond(file, pageNo, fid)
-		bp.replacer.touch(fid)
 
 		pg, err := file.readPage(pageNo)
 		if err != nil {
+			bp.Unpin(key)
 			return nil, err
 		}
 		(*pg).(*heapPage).pageId = pageNo
@@ -276,6 +323,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 	// read
 	fid, err := bp.replacer.evict()
 	if err != nil {
+		bp.Unpin(key)
 		return nil, err
 	}
 
@@ -287,6 +335,7 @@ func (bp *BufferPool) GetPage(file DBFile, pageNo int, tid TransactionID, perm R
 
 	pg, err := file.readPage(pageNo)
 	if err != nil {
+		bp.Unpin(key)
 		return nil, err
 	}
 	bp.pages[fid] = *pg
@@ -304,24 +353,29 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 	fetchLockOk := false
 	key := file.pageKey(pageNo)
 	for !fetchLockOk {
-		fetchLockOk = bp.mgr.AcquireLock(tid, key, perm)
+		ch, fetchLockOk := bp.mgr.AcquireLock(tid, key, perm)
 		if fetchLockOk {
 			// ok
+			//fmt.Println(*tid, " sc ", perm)
 			break
+		}
+		for _, to := range bp.mgr.reqMap[key].Tid {
+			bp.g.AddEdge(tid, to)
 		}
 		// otherwise
 		// block current thread
-		fmt.Println("fuck!")
 		bp.mu.Unlock()
-		time.Sleep(100) // sleep for 100 ms
+		<-*ch
 		bp.mu.Lock()
 	}
+	bp.Pin(key)
+
 	// get page successfully
 	currTidPageFetchedList := bp.tranFetchedPid[tid]
 	if currTidPageFetchedList != nil {
 		*currTidPageFetchedList = append(*currTidPageFetchedList, FetchedPageType{pageNo, perm, file})
 	}
-	fid, ok := bp.coord[file.pageKey(pageNo)]
+	fid, ok := bp.corr[key]
 	// not only pid , but also file is same
 	if ok && (*bp.pages[fid].getFile()) == file {
 		return &bp.pages[fid], nil
@@ -342,6 +396,7 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 	// read
 	fid, err := bp.replacer.evict()
 	if err != nil {
+		bp.Unpin(key)
 		return nil, err
 	}
 
@@ -354,6 +409,7 @@ func (bp *BufferPool) NewPage(file DBFile, pageNo int, tid TransactionID, perm R
 
 	pg := newHeapPage(file.Descriptor(), pageNo, file.(*HeapFile))
 	if err != nil {
+		bp.Unpin(key)
 		return nil, err
 	}
 	bp.pages[fid] = pg

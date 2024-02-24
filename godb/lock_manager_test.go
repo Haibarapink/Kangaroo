@@ -20,7 +20,7 @@ func TestLockManager(t *testing.T) {
 		t.Errorf("req.RdCnt != 2")
 	}
 
-	ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
+	_, ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
 	if ok {
 		t.Errorf("acuqiring write-page success after read transation")
 	}
@@ -32,7 +32,7 @@ func TestLockManager(t *testing.T) {
 	if ok {
 		t.Errorf("req shouldn't  contain")
 	}
-	ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
+	_, ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
 	req, ok = mgr.reqMap[pageNo1]
 	if !ok {
 		t.Errorf("req should contain")
@@ -60,7 +60,7 @@ func TestLockManagerReacquireLock(t *testing.T) {
 		t.Errorf("req.RdCnt != 2")
 	}
 
-	ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
+	_, ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
 	if ok {
 		t.Errorf("acuqiring write-page success after read transation")
 	}
@@ -72,7 +72,7 @@ func TestLockManagerReacquireLock(t *testing.T) {
 	if ok {
 		t.Errorf("req shouldn't  contain")
 	}
-	ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
+	_, ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
 	req, ok = mgr.reqMap[pageNo1]
 	if !ok {
 		t.Errorf("req should contain")
@@ -81,31 +81,31 @@ func TestLockManagerReacquireLock(t *testing.T) {
 		t.Errorf("check failure")
 	}
 
-	ok = mgr.AcquireLock(&write_tid3, pageNo1, ReadPerm)
+	_, ok = mgr.AcquireLock(&write_tid3, pageNo1, ReadPerm)
 	if !ok {
 		t.Errorf("reacquiring should success")
 	}
-	ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
+	_, ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
 	if !ok {
 		t.Errorf("reacquiring should success")
 	}
-	ok = mgr.AcquireLock(&read_tid1, pageNo1, ReadPerm)
+	_, ok = mgr.AcquireLock(&read_tid1, pageNo1, ReadPerm)
 	if ok {
 		t.Errorf("acquiring should fail")
 	}
 	// clean all lock
 	mgr.ReleaseLock(&write_tid3, pageNo1)
 
-	ok = mgr.AcquireLock(&write_tid3, pageNo1, ReadPerm)
+	_, ok = mgr.AcquireLock(&write_tid3, pageNo1, ReadPerm)
 	if !ok {
 		t.Errorf("bug")
 	}
-	ok = mgr.AcquireLock(&read_tid1, pageNo1, ReadPerm)
+	_, ok = mgr.AcquireLock(&read_tid1, pageNo1, ReadPerm)
 	if !ok {
 		t.Errorf("bug")
 	}
 	// try updating lock
-	ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
+	_, ok = mgr.AcquireLock(&write_tid3, pageNo1, WritePerm)
 	if ok {
 		t.Errorf("updating lock bug")
 	}

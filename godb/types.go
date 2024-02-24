@@ -48,9 +48,10 @@ type Page interface {
 	getFile() *DBFile
 }
 
-func PageKey(p Page, pageNo int) any {
+func PageKey(p Page) any {
 	file := p.getFile()
-	return (*file).pageKey(pageNo)
+	hp := p.(*heapPage)
+	return (*file).pageKey(hp.pageId)
 }
 
 type DBFile interface {

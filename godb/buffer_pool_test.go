@@ -132,6 +132,7 @@ func TestGetPage(t *testing.T) {
 		if pg == nil || err != nil {
 			t.Fatalf("failed to get page %d (err = %v)", i, err)
 		}
+		bp.Unpin(PageKey(*pg))
 	}
 	_, err := bp.GetPage(hf, 7, tid, ReadPerm)
 	if err == nil {

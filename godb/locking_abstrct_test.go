@@ -28,7 +28,7 @@ func (bfp *bfp_demo) GetPage(tid TransactionID) {
 		} else {
 			perm = WritePerm
 		}
-		ok = bfp.mgr.AcquireLock(tid, 1, perm)
+		_, ok = bfp.mgr.AcquireLock(tid, 1, perm)
 		if ok {
 			break
 		}
