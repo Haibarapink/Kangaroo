@@ -24,18 +24,18 @@ func testLimitCount(t *testing.T, n int) {
 		// hack to force dirty pages to disk
 		// because CommitTransaction may not be implemented
 		// yet if this is called in lab 2
-		if i%10 == 0 {
-			for j := hf.NumPages() - 1; j > -1; j-- {
-				pg, err := bp.GetPage(hf, j, tid, ReadPerm)
-				if pg == nil || err != nil {
-					t.Fatal("page nil or error", err)
-				}
-				if (*pg).isDirty() {
-					(*hf).flushPage(pg)
-					(*pg).setDirty(false)
-				}
-			}
-		}
+		//if i%10 == 0 {
+		//	for j := hf.NumPages() - 1; j > -1; j-- {
+		//		pg, err := bp.GetPage(hf, j, tid, ReadPerm)
+		//		if pg == nil || err != nil {
+		//			t.Fatal("page nil or error", err)
+		//		}
+		//		if (*pg).isDirty() {
+		//			(*hf).flushPage(pg)
+		//			(*pg).setDirty(false)
+		//		}
+		//	}
+		//}
 
 		//commit frequently to prevent buffer pool from filling
 		//todo fix

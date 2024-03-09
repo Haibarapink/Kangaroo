@@ -4,6 +4,7 @@ go 1.19
 
 replace github.com/srmadden/godb => ./godb
 
+
 require (
 	github.com/chzyer/readline v1.5.1
 	github.com/srmadden/godb v0.0.0-00010101000000-000000000000
