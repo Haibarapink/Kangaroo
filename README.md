@@ -1,6 +1,7 @@
-# Kangaroo
-[From mit-6.830](https://github.com/MIT-DB-Class/go-db-hw-2023)
+# Kangaroo 
+![img](doc/1710479991308.png)
 
+[From mit-6.830](https://github.com/MIT-DB-Class/go-db-hw-2023)
 用go实现的一个关系数据库
 
 支持的一些功能
